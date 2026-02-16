@@ -64,7 +64,10 @@ executable SenaVN
     main-is:          Main.hs
 
     -- Modules included in this executable, other than Main.
-    -- other-modules:
+    other-modules:    Models
+                    , Api
+                    , Utils
+                    , Common
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
@@ -77,14 +80,13 @@ executable SenaVN
                     -- , vty
                     , optparse-applicative
                     , haskeline
+                    , transformers
                     , aeson
-                    -- , req
+                    , req
+                    , random
 
     -- Directories containing source files.
     hs-source-dirs:   app
 
     -- Base language which the package is written in.
     default-language: Haskell2010
-
-    other-modules:    Models
-

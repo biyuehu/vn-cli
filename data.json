@@ -1,0 +1,10 @@
+{
+  "gameCore": [],
+  "localPaths": [],
+  "config": {
+    "syncUsername": "",
+    "syncToken": "",
+    "syncFile": "",
+    "syncVisibility": false
+  }
+}

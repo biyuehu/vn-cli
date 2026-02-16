@@ -1,0 +1,71 @@
+{
+  "name": "gal-keeper",
+  "private": true,
+  "version": "1.0.2",
+  "description": "A lightweight and fast visual novel management for coders, statistics and cloud syncing tool built with Tauri and React",
+  "type": "module",
+  "author": "Arimura Sena <me@hotaru.icu>",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s -r 0"
+  },
+  "keywords": [
+    "visual novel",
+    "galgame",
+    "avg",
+    "erogame",
+    "game",
+    "adv",
+    "management",
+    "statistics",
+    "tool",
+    "Tauri",
+    "React"
+  ],
+  "bugs": {
+    "url": "https://github.com/biyuehu/gal-keeper/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/biyuehu/gal-keeper.git"
+  },
+  "dependencies": {
+    "@fluentui/font-icons-mdl2": "^8.5.57",
+    "@fluentui/react": "^8.121.8",
+    "@fluentui/react-components": "^9.55.1",
+    "@fluentui/react-icons": "^2.0.264",
+    "@kotori-bot/i18n": "^1.3.2",
+    "@kotori-bot/logger": "^1.3.2",
+    "@kotori-bot/tools": "^1.5.2",
+    "@tauri-apps/api": "^1.6.0",
+    "axios": "^1.7.9",
+    "fluoro": "^1.1.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.27.0",
+    "recharts": "^2.15.1",
+    "tsukiko": "^1.4.2",
+    "unocss": "^0.64.1",
+    "zustand": "^5.0.2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@tauri-apps/cli": "^1",
+    "@types/node": "^22.10.1",
+    "@types/react": "^18.2.15",
+    "@types/react-dom": "^18.2.7",
+    "@types/readline-sync": "^1.4.8",
+    "@types/recharts": "^1.8.29",
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.20",
+    "conventional-changelog-cli": "^5.0.0",
+    "globals": "^15.11.0",
+    "postcss": "^8.4.47",
+    "readline-sync": "^1.4.10",
+    "typescript": "^5.2.2",
+    "vite": "^5.3.1"
+  }
+}

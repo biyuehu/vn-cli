@@ -4,7 +4,7 @@
 module Models
   ( GameId (..),
     GameCore (..),
-    LocalPaths (..),
+    LocalPath (..),
     GameWithLocal (..),
     CloudData (..),
     PlayTimeline (..),
@@ -38,9 +38,9 @@ data Link = Link
   deriving (Show, Eq, Generic, FromJSON, ToJSON)
 
 data GameCore = GameCore
-  { gameId :: !GameId,
+  { coreId :: !GameId,
     vndbId :: !(Maybe Text),
-    bgmId :: !(Maybe Text),
+    -- bgmId :: !(Maybe Text),
     updateDate :: !Int, -- Unix timestamp
     title :: !Text,
     alias :: ![Text],
@@ -54,22 +54,22 @@ data GameCore = GameCore
     releaseDate :: !Int,
     rating :: !Double,
     developer :: !Text,
-    -- images :: ![Text], -- 截图 URL/路径
+    images :: ![Text],
     links :: ![Link]
   }
   deriving (Show, Eq, Generic, FromJSON, ToJSON)
 
-data LocalPaths = LocalPaths
-  { id :: !GameId,
-    programFile :: !FilePath,
-    savePath :: !(Maybe FilePath),
-    guideFile :: !(Maybe FilePath)
+data LocalPath = LocalPath
+  { localId :: !GameId,
+    programFile :: !Text,
+    savePath :: !(Maybe Text),
+    guideFile :: !(Maybe Text)
   }
   deriving (Show, Eq, Generic, FromJSON, ToJSON)
 
 data GameWithLocal = GameWithLocal
   { game :: !GameCore,
-    local :: !(Maybe LocalPaths)
+    local :: !(Maybe LocalPath)
   }
   deriving (Show, Eq, Generic, FromJSON, ToJSON)
 
@@ -79,14 +79,25 @@ data CloudData = CloudData
   }
   deriving (Show, Eq, Generic, FromJSON, ToJSON)
 
-data RootState = RootState
-  { gameCore :: ![GameCore],
-    localPaths :: ![LocalPaths]
-    -- sync :: !SyncState,
-    -- settings :: !Settings
-    -- ... 其他字段
+data AppConfig = AppConfig
+  { syncUsername :: !Text,
+    syncToken :: !Text,
+    syncFile :: !Text,
+    syncVisibility :: Bool
   }
   deriving (Show, Eq, Generic, FromJSON, ToJSON)
+
+data RootState = RootState
+  { gameCore :: ![GameCore],
+    localPaths :: ![LocalPath],
+    config :: !AppConfig
+  }
+  deriving (Show, Eq, Generic, FromJSON, ToJSON)
+
+-- data ApplicationData = ApplicationData
+--   { root :: !RootState,
+--     cloud :: !CloudData
+--   }
 
 -- deriving anyclass ()
 
