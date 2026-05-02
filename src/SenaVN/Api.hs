@@ -1,64 +1,13 @@
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE OverloadedStrings #-}
+module SenaVN.Api (transformVNData, fetchFromVndb) where
 
-module Api (fetchFromVndb, FetchGameData (..), VndbBy (..)) where
-
-import Common
-import Data.Aeson (FromJSON, object, (.=))
+import Data.Aeson (object, (.=))
 import Data.List (sortBy)
 import Data.Maybe (fromMaybe)
 import Data.Ord (Down (Down), comparing)
 import Data.Text (Text, splitOn, unpack)
-import GHC.Generics (Generic)
 import Network.HTTP.Req
-
-newtype VNTitle = VNTitle {title :: Text} deriving (Show, Generic, FromJSON)
-
-newtype VNScreenshot = VNScreenshot {url :: Text} deriving (Show, Generic, FromJSON)
-
-data VNTag = VNTag {name :: Text, rating :: Double} deriving (Show, Generic, FromJSON)
-
-newtype VNDeveloper = VNDeveloper {name :: Text} deriving (Show, Generic, FromJSON)
-
-data VNExtLink = VNExtLink {url :: !Text, name :: !Text} deriving (Show, Generic, FromJSON)
-
-data VNRawItem = VNRawItem
-  { id :: !Text,
-    title :: !Text,
-    titles :: ![VNTitle],
-    screenshots :: ![VNScreenshot],
-    description :: !(Maybe Text),
-    tags :: ![VNTag],
-    length_minutes :: !(Maybe Int),
-    released :: !Text,
-    rating :: !(Maybe Double),
-    developers :: ![VNDeveloper],
-    extlinks :: ![VNExtLink]
-  }
-  deriving (Show, Generic, FromJSON)
-
-data VNResponse = VNResponse {results :: ![VNRawItem], more :: !Bool} deriving (Show, Generic, FromJSON)
-
-data FetchGameData = FetchGameData
-  { vndbId :: !Text,
-    title :: !Text,
-    alias :: ![Text],
-    description :: !Text,
-    tags :: ![Text],
-    expectedPlayHours :: !Double,
-    releaseDate :: !Int,
-    rating :: !Double,
-    developer :: !Text,
-    images :: ![Text],
-    links :: ![VNExtLink]
-  }
-  deriving (Show, Generic)
-
-data VNRequest = VNRequest {filters :: [Text], fields :: Text} deriving (Eq, Show, Generic)
-
-data VndbBy = VndbName Text | VndbId Text
+import SenaVN.Core (Romi)
+import SenaVN.Types
 
 transformVNData :: VNRawItem -> FetchGameData
 transformVNData raw =
@@ -130,4 +79,4 @@ fetchFromVndb vndbBy = runReq defaultHttpConfig $ do
       mempty
 
   let vnResponse = responseBody response :: VNResponse
-  pure $ map transformVNData (results vnResponse)
+  pure $ map transformVNData vnResponse.results

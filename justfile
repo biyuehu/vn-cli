@@ -1,9 +1,10 @@
-set windows-shell := ["powershell.exe"]
+# set windows-shell := ["powershell.exe"]
 
 default:
   @just --list
 
 dev:
-  pnpx nodemon --exec 'cabal run' --ext .hs
+  bun x nodemon --exec 'cabal run' --ext .hs
 
 build:
+  cabal build

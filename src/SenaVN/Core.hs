@@ -1,4 +1,4 @@
-module Common (Romi) where
+module SenaVN.Core (Romi) where
 
 import Control.Monad.Trans.Except (ExceptT)
 

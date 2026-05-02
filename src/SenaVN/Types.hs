@@ -1,17 +1,4 @@
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
-
-module Models
-  ( GameId (..),
-    GameCore (..),
-    LocalPath (..),
-    GameWithLocal (..),
-    CloudData (..),
-    PlayTimeline (..),
-    Link (..),
-    RootState (..),
-  )
-where
+module SenaVN.Types where
 
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Text (Text)
@@ -93,6 +80,53 @@ data RootState = RootState
     config :: !AppConfig
   }
   deriving (Show, Eq, Generic, FromJSON, ToJSON)
+
+
+newtype VNTitle = VNTitle {title :: Text} deriving (Show, Generic, FromJSON)
+
+newtype VNScreenshot = VNScreenshot {url :: Text} deriving (Show, Generic, FromJSON)
+
+data VNTag = VNTag {name :: Text, rating :: Double} deriving (Show, Generic, FromJSON)
+
+newtype VNDeveloper = VNDeveloper {name :: Text} deriving (Show, Generic, FromJSON)
+
+data VNExtLink = VNExtLink {url :: !Text, name :: !Text} deriving (Show, Generic, FromJSON)
+
+data VNRawItem = VNRawItem
+  { id :: !Text,
+    title :: !Text,
+    titles :: ![VNTitle],
+    screenshots :: ![VNScreenshot],
+    description :: !(Maybe Text),
+    tags :: ![VNTag],
+    length_minutes :: !(Maybe Int),
+    released :: !Text,
+    rating :: !(Maybe Double),
+    developers :: ![VNDeveloper],
+    extlinks :: ![VNExtLink]
+  }
+  deriving (Show, Generic, FromJSON)
+
+data VNResponse = VNResponse {results :: ![VNRawItem], more :: !Bool} deriving (Show, Generic, FromJSON)
+
+data FetchGameData = FetchGameData
+  { vndbId :: !Text,
+    title :: !Text,
+    alias :: ![Text],
+    description :: !Text,
+    tags :: ![Text],
+    expectedPlayHours :: !Double,
+    releaseDate :: !Int,
+    rating :: !Double,
+    developer :: !Text,
+    images :: ![Text],
+    links :: ![VNExtLink]
+  }
+  deriving (Show, Generic)
+
+data VNRequest = VNRequest {filters :: [Text], fields :: Text} deriving (Eq, Show, Generic)
+
+data VndbBy = VndbName Text | VndbId Text
 
 -- data ApplicationData = ApplicationData
 --   { root :: !RootState,

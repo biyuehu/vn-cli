@@ -1,4 +1,3 @@
-# Logs
 logs
 *.log
 
@@ -16,11 +15,12 @@ logs
 *.sw?
 
 dist-newstyle
+.stack-work
 
 # scripts/*.json
 
 *.db
 
-src-old
-package.json
-request.http
+# Added by cargo
+
+/target
