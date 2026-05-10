@@ -100,9 +100,9 @@ totalPlayed = sum . map (.duration)
 ratingDoc :: Double -> Doc AnsiStyle
 ratingDoc 0 = dim_ "not rated"
 ratingDoc r =
-  let filled = round (r / 10) :: Int
+  let filled = round r :: Int
       stars = replicate filled '★' <> replicate (10 - filled) '☆'
-   in yellow_ (pretty stars) <+> dim_ (pretty (show (round r :: Int) <> "/100"))
+   in yellow_ (pretty stars) <+> dim_ (pretty (show (round r :: Int) <> "/10"))
 
 truncated :: Int -> Text -> Doc AnsiStyle
 truncated n t

@@ -315,7 +315,6 @@ handle Run {runTarget, runRandom, runRecent, runLast} = do
 handle Fetch {fetchName, fetchOrder} = do
   results <- liftIO $ fetchFromVndb (VndbName fetchName)
   when (null results) $ throwR "no results found"
-  liftIO $ TIO.putStrLn $ "desciption:" <> (head results).description
   liftIO $ case fetchOrder of
     0 -> printFetchResults results
     n ->
