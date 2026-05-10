@@ -1,17 +1,28 @@
 module Main where
 
-import Control.Monad.Trans.Except (runExceptT)
 import Options.Applicative
+import Prettyprinter
+import Prettyprinter.Render.Terminal
 import SenaVN.Command (commandParser)
+import SenaVN.Core (Env (Env), runRomi)
+import SenaVN.DB (withDB)
 import SenaVN.Handler (handle)
+import System.IO (BufferMode (NoBuffering), hSetBuffering, stderr, stdout)
 
 main :: IO ()
 main = do
-  -- TODO: automatically create data.json if not exists
-  command' <- execParser opts
-  result <- runExceptT $ handle command'
+  hSetBuffering stdout NoBuffering
+  hSetBuffering stderr NoBuffering
+  cmd <- execParser opts
+  result <- withDB $ \conn ->
+    runRomi (Env conn) $ handle cmd
   case result of
-    Left err -> Prelude.putStrLn err
-    Right _ -> pure ()
+    Left err ->
+      renderIO stdout . layoutPretty defaultLayoutOptions $
+        annotate (color Red) "error" <+> pretty err <> line
+    Right () -> pure ()
   where
-    opts = info (commandParser <**> helper) (fullDesc <> progDesc "Gal Manager")
+    opts =
+      info
+        (commandParser <**> helper)
+        (fullDesc <> progDesc "sena — gal library manager")

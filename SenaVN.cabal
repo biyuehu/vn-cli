@@ -29,14 +29,21 @@ common shared-properties
 
   build-depends:
     aeson,
+    aeson-pretty,
     base ^>=4.19.2.0,
+    bytestring,
+    directory,
+    filepath,
     haskeline,
     optparse-applicative,
     prettyprinter,
     prettyprinter-ansi-terminal,
+    process,
     random,
     req,
     sqlite-simple,
+    template-haskell,
+    temporary,
     text,
     time,
     transformers,
@@ -50,9 +57,10 @@ library
     SenaVN.Classes
     SenaVN.Command
     SenaVN.Core
-    SenaVN.Database
+    SenaVN.DB
     SenaVN.Handler
     SenaVN.Pretty
+    SenaVN.Session
     SenaVN.Types
     SenaVN.Utils
 

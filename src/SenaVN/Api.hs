@@ -4,9 +4,10 @@ import Data.Aeson (object, (.=))
 import Data.List (sortBy)
 import Data.Maybe (fromMaybe)
 import Data.Ord (Down (Down), comparing)
-import Data.Text (Text, splitOn, unpack)
+import Data.Text (Text)
+import qualified Data.Text as T
+import qualified Data.Text.IO as TIO
 import Network.HTTP.Req
-import SenaVN.Core (Romi)
 import SenaVN.Types
 
 transformVNData :: VNRawItem -> FetchGameData
@@ -50,16 +51,16 @@ transformVNData raw =
       [] -> ""
     imgList = map (\(VNScreenshot u) -> u) screens
 
-    parseDateToTimestamp dateStr = case splitOn "-" dateStr of
+    parseDateToTimestamp dateStr = case T.splitOn "-" dateStr of
       [y, m, d] ->
-        let year = read (unpack y) :: Int
-            month = read (unpack m) :: Int
-            day = read (unpack d) :: Int
+        let year = read (T.unpack y) :: Int
+            month = read (T.unpack m) :: Int
+            day = read (T.unpack d) :: Int
             days = (year - 1970) * 365 + month * 30 + day
          in days * 86400
       _ -> 0
 
-fetchFromVndb :: VndbBy -> Romi [FetchGameData]
+fetchFromVndb :: VndbBy -> IO [FetchGameData]
 fetchFromVndb vndbBy = runReq defaultHttpConfig $ do
   response <-
     req

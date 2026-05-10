@@ -1,190 +1,451 @@
+{-# LANGUAGE NamedFieldPuns #-}
+
 module SenaVN.Handler (handle) where
 
-import Control.Monad (when)
-import Control.Monad.IO.Class (MonadIO (liftIO))
-import Control.Monad.Trans.Except (throwE)
-import Data.Foldable (find)
+import Control.Monad (forM_, when)
+import Control.Monad.IO.Class (liftIO)
+import Data.Aeson (eitherDecode, encode)
+import qualified Data.ByteString.Lazy as BL
 import Data.List (sortOn)
-import Data.Maybe (isJust)
+import Data.Maybe (fromMaybe, isJust)
+import Data.Ord (Down (..))
+import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Text.IO as TIO
+import Data.Time.Clock.POSIX (getPOSIXTime)
+import Prettyprinter
+import Prettyprinter.Render.Terminal
 import SenaVN.Api (fetchFromVndb)
 import SenaVN.Command
-import SenaVN.Core
-import SenaVN.Pretty (printFetchResults)
+import SenaVN.Core (Romi, askConn, throwR)
+import qualified SenaVN.DB as DB
+import SenaVN.Pretty
+import qualified SenaVN.Session as Session
 import SenaVN.Types
-import SenaVN.Utils
+import SenaVN.Utils (randomOne)
+import System.Environment (lookupEnv)
+import System.FilePath ((</>))
+import System.IO (hClose, stdout)
+import System.IO.Temp (withSystemTempFile)
+import System.Process (CreateProcess (..), StdStream (..), createProcess, proc)
+
+now :: IO Int
+now = round <$> getPOSIXTime
+
+-- 找不到游戏就直接 throwR
+requireGame :: Text -> Romi GameCore
+requireGame gid = do
+  conn <- askConn
+  mg <- liftIO $ DB.getGame conn gid
+  case mg of
+    Nothing -> throwR ("game not found: " <> gid)
+    Just g -> pure g
+
+-- 有 path 就写 LocalPath，没有就跳过
+setupLocal :: Text -> Maybe Text -> Romi ()
+setupLocal _ Nothing = pure ()
+setupLocal gid (Just path) = do
+  conn <- askConn
+  liftIO $
+    DB.upsertLocalPath
+      conn
+      LocalPath
+        { localId = GameId gid,
+          programFile = path,
+          savePath = Nothing,
+          guideFile = Nothing
+        }
+
+-- 从 VNDB 结果列表里取第 N 条（1-indexed）
+pickResult :: Int -> [a] -> Maybe a
+pickResult _ [] = Nothing
+pickResult n xs
+  | n >= 1 && n <= length xs = Just (xs !! (n - 1))
+  | otherwise = Just (head xs) -- 超出范围退化到第一条
+
+-- 将 FetchGameData 应用到 GameCore
+applyFetch :: Bool -> GameCore -> FetchGameData -> GameCore
+applyFetch keepName g f =
+  g
+    { vndbId = Just f.vndbId,
+      title = if keepName then g.title else f.title,
+      alias = f.alias,
+      description = f.description,
+      tags = f.tags,
+      expectedPlayTime = round (f.expectedPlayHours * 60),
+      releaseDate = f.releaseDate,
+      rating = f.rating,
+      developer = f.developer,
+      images = f.images,
+      links = map (\l -> Link {name = l.name, url = l.url}) f.links
+    }
+
+-- 将 MetaOptions 定点覆盖到 GameCore
+applyMeta :: GameCore -> MetaOptions -> GameCore
+applyMeta g m =
+  g
+    { vndbId = m.metaVndbId <> g.vndbId, -- Maybe 的 <> 取第一个 Just
+      developer = fromMaybe g.developer m.metaDeveloper,
+      releaseDate = fromMaybe g.releaseDate m.metaReleaseDate,
+      rating = fromMaybe g.rating m.metaRating,
+      description = fromMaybe g.description m.metaDescription,
+      tags = if null m.metaTags then g.tags else m.metaTags
+    }
+
+-- 空白 GameCore
+emptyGameCore :: Text -> Text -> Int -> GameCore
+emptyGameCore gid name ts =
+  GameCore
+    { coreId = GameId gid,
+      vndbId = Nothing,
+      title = name,
+      alias = [],
+      description = "",
+      tags = [],
+      images = [],
+      links = [],
+      playTimelines = [],
+      expectedPlayTime = 0,
+      lastPlay = 0,
+      createDate = ts,
+      updateDate = ts,
+      releaseDate = 0,
+      rating = 0.0,
+      developer = ""
+    }
+
+-- 用 $EDITOR（fallback notepad.exe）编辑 GameCore JSON
+-- 需要在 cabal 里加 aeson、temporary、process
+openEditor :: GameCore -> Romi GameCore
+openEditor g = do
+  editor <- liftIO $ fromMaybe "notepad.exe" <$> lookupEnv "EDITOR"
+  raw <- liftIO $
+    withSystemTempFile "sena-edit-.json" $ \path h -> do
+      BL.hPut h (encode g)
+      hClose h
+      -- TODO Windows：createProcess 改用 CREATE_NEW_CONSOLE 让编辑器有窗口
+      _ <-
+        createProcess
+          (proc editor [path])
+            { std_in = Inherit,
+              std_out = Inherit,
+              std_err = Inherit
+            }
+      BL.readFile path
+  case eitherDecode raw of
+    Left err -> throwR ("parse error after editor: " <> T.pack err)
+    Right g' -> pure g'
+
+-- 启动 foo.exe（detached）
+spawnFoo :: Text -> Text -> Text -> IO ()
+spawnFoo gameId gameName exePath = do
+  sessDir <- Session.getSessionsDir
+  let sessionFile = sessDir </> T.unpack gameId <> ".session.json"
+  -- TODO：Windows 下用 DETACHED_PROCESS flag，让 foo.exe 与 sena 完全脱钩
+  _ <-
+    createProcess
+      ( proc
+          "foo.exe"
+          [ "--game-id",
+            T.unpack gameId,
+            "--game-name",
+            T.unpack gameName,
+            "--exe-path",
+            T.unpack exePath,
+            "--session",
+            sessionFile
+          ]
+      )
+        { std_in = NoStream,
+          std_out = NoStream,
+          std_err = NoStream
+        }
+  pure ()
+
+-- ────────────────────────────────────────────
+-- Pretty 输出辅助（不引入 Pretty 内部细节）
+-- ────────────────────────────────────────────
+
+render :: Doc AnsiStyle -> IO ()
+render = renderIO stdout . layoutPretty defaultLayoutOptions
+
+printLn :: Doc AnsiStyle -> IO ()
+printLn d = render (d <> line)
+
+ok :: Doc AnsiStyle -> IO ()
+ok msg = printLn $ annotate (color Green) "✓" <+> msg
+
+err_ :: Doc AnsiStyle -> IO ()
+err_ msg = printLn $ annotate (color Red) "✗" <+> msg
+
+-- ────────────────────────────────────────────
+-- handle
+-- ────────────────────────────────────────────
 
 handle :: Command -> Romi ()
-handle (Add title' coreId' maybePath' noFetch' order' keepName') = do
-  rootState <- loadRootStates
-  let gameId = GameId coreId'
-  saveRootStates $
-    rootState
-      { gameCore = gameCore rootState ++ [GameCore {coreId = gameId, vndbId = Nothing, updateDate = 0, title = title', alias = [], description = "", tags = [], playTimelines = [], expectedPlayTime = 0, lastPlay = 0, createDate = 0, releaseDate = 0, rating = 0, developer = "", images = [], links = []}],
-        localPaths =
-          rootState.localPaths ++ case maybePath' of
-            Just path' -> [LocalPath {localId = gameId, programFile = path', savePath = Nothing, guideFile = Nothing}]
-            Nothing -> []
-      }
-  romiPutStrLn $ "Adding game " <> title' <> " with id " <> coreId'
-handle (Remove coreId' hard') = do
-  rootState <- loadRootStates
-  let newGameCores = filter (\g -> unGameId g.coreId /= coreId') $ gameCore rootState
-  when (length newGameCores == length (gameCore rootState)) $ throwE "No game found"
-  let newLocalPaths = filter (\p -> unGameId (localId p) /= coreId') $ localPaths rootState
-  -- TODO: add confirmation for hard remove
-  saveRootStates $ rootState {gameCore = if hard' then newGameCores else gameCore rootState, localPaths = newLocalPaths}
-handle (Run coreId' random' last' recent') = do
-  when (length (filter Prelude.id [isJust coreId', random', last', recent']) >= 2) $ throwE "Only one of id, random, last, or recent can be specified"
+-- ── add ──────────────────────────────────────────────────
 
-  rootState <- loadRootStates
-  let games = gameCore rootState
-  targetGame <- case coreId' of
-    Just a -> pure $ find (\g -> unGameId g.coreId == a) games
+handle Add {addName, addCoreId, addPath, addNoFetch, addSkip, addOrder, addKeepName, addMeta} = do
+  conn <- askConn
+  existing <- liftIO $ DB.getGame conn addCoreId
+  when (isJust existing) $ throwR ("id already exists: " <> addCoreId)
+  ts <- liftIO now
+  let base = emptyGameCore addCoreId addName ts
+
+  finalGame <-
+    if hasMeta addMeta
+      then do
+        -- 提供了 meta option → 直接保存，不 fetch 不 editor
+        pure (applyMeta base addMeta)
+      else
+        if addNoFetch
+          then
+            -- --no-fetch → 跳过 fetch，进 editor（除非 --skip）
+            if addSkip
+              then pure base
+              else openEditor base
+          else do
+            -- 默认：fetch + editor（--skip 跳过 editor）
+            results <- liftIO $ fetchFromVndb (VndbName addName)
+            case pickResult addOrder results of
+              Nothing -> throwR "no VNDB results found"
+              Just fd -> do
+                let fetched = applyFetch addKeepName base fd
+                if addSkip
+                  then pure fetched
+                  else openEditor fetched
+
+  liftIO $ DB.insertGame conn finalGame
+  setupLocal addCoreId addPath
+  liftIO $ ok $ bold_ (pretty finalGame.title) <+> dim_ "added."
+
+-- ── edit ─────────────────────────────────────────────────
+
+handle Edit {editCoreId, editFetch, editApply, editOrder, editKeepName, editMeta} = do
+  conn <- askConn
+  g <- requireGame editCoreId
+  ts <- liftIO now
+
+  finalGame <-
+    if hasMeta editMeta
+      then do
+        -- 提供了 meta option → 定点保存，不 editor
+        pure (applyMeta g editMeta)
+      else
+        if editFetch
+          then do
+            -- --fetch → 拉取后进 editor（--apply 跳过 editor）
+            results <- liftIO $ fetchFromVndb (VndbName g.title)
+            case pickResult editOrder results of
+              Nothing -> throwR "no VNDB results found"
+              Just fd -> do
+                let fetched = applyFetch editKeepName g fd
+                if editApply
+                  then pure fetched
+                  else openEditor fetched
+          else
+            -- 默认：editor 预填当前数据
+            openEditor g
+
+  liftIO $ do
+    DB.updateGame conn (finalGame {updateDate = ts})
+    ok $ bold_ (pretty finalGame.title) <+> dim_ "updated."
+
+-- ── rm ───────────────────────────────────────────────────
+
+handle Remove {removeCoreId, removeHard} = do
+  conn <- askConn
+  g <- requireGame removeCoreId
+  -- TODO：加 confirmation prompt（haskeline readline）
+  liftIO $ do
+    DB.deleteGame conn removeCoreId
+    ok $
+      bold_ (pretty g.title)
+        <+> dim_ "removed."
+        <> if removeHard then dim_ " (TODO: cloud remove)" else mempty
+
+-- ── run ──────────────────────────────────────────────────
+
+handle Run {runTarget, runRandom, runRecent, runLast} = do
+  conn <- askConn
+  let activeFlags = length $ filter Prelude.id [isJust runTarget, runRandom, runRecent, runLast]
+  when (activeFlags > 1) $
+    throwR "only one of <id> / --random / --recent / --last can be specified"
+
+  liftIO $ Session.reconcileSessions conn
+
+  games <- liftIO $ DB.getAllGames conn
+  when (null games) $ throwR "library is empty"
+
+  g <- case runTarget of
+    Just gid -> requireGame gid
+    Nothing
+      | runRandom ->
+          liftIO (randomOne games) >>= maybe (throwR "no games available") pure
+      | runRecent ->
+          case sortOn (Down . (.lastPlay)) (filter (\x -> x.lastPlay > 0) games) of
+            [] -> throwR "no games played yet"
+            (x : _) -> pure x
+      | runLast ->
+          case sortOn (Down . (.createDate)) games of
+            [] -> throwR "library is empty"
+            (x : _) -> pure x
+      | otherwise ->
+          throwR "specify a game ID or use --random / --recent / --last"
+
+  mLocal <- liftIO $ DB.getLocalPath conn g.coreId.unGameId
+  case mLocal of
     Nothing ->
-      if recent'
-        then
-          pure $ foldl (\acc g -> case acc of Just acc' | lastPlay acc' > lastPlay g -> Just acc'; _ -> Just g) Nothing games
+      throwR $
+        "no exe set for "
+          <> g.title
+          <> " — run: sena use "
+          <> g.coreId.unGameId
+          <> " <path>"
+    Just lp -> liftIO $ do
+      spawnFoo g.coreId.unGameId g.title lp.programFile
+      printLn $
+        annotate (color Green) "▶"
+          <+> bold_ (pretty g.title)
+          <> line
+          <> dim_ (pretty lp.programFile)
+
+-- ── fetch ─────────────────────────────────────────────────
+
+handle Fetch {fetchName, fetchOrder} = do
+  results <- liftIO $ fetchFromVndb (VndbName fetchName)
+  when (null results) $ throwR "no results found"
+  liftIO $ TIO.putStrLn $ "desciption:" <> (head results).description
+  liftIO $ case fetchOrder of
+    0 -> printFetchResults results
+    n ->
+      if n >= 1 && n <= length results
+        then printFetchResult n (results !! (n - 1))
         else
-          if last'
-            then pure $ foldl (\acc g -> case acc of Just acc' | createDate acc' < createDate g -> Just acc'; _ -> Just g) Nothing games
-            else randomOne games
-  case targetGame of
-    Just g -> do
-      romiPutStrLn $ "Running game " <> g.title
-    Nothing -> throwE "No game found"
-handle (Fetch title' order') = do
-  _rootState <- loadRootStates
-  -- romiPutStrLn $ "Fetching from " <> T.pack (show fetch') <> ": " <> title'
-  romiPutStrLn $ "Order: " <> T.pack (show order')
+          err_
+            ( "invalid --order "
+                <> pretty n
+                <> ", got "
+                <> pretty (length results)
+                <> " results"
+            )
 
-  res <- fetchFromVndb $ VndbName title'
+-- ── list ──────────────────────────────────────────────────
 
-  if order' == 0
-    then do
-      romiPutStrLn $ "Results count:" <> T.pack (show (length res))
-      liftIO $ printFetchResults res
-    else
-      if order' >= 1 && order' <= length res
-        then
-          liftIO $ printFetchResults [res !! (order' - 1)]
-        else
-          romiPutStrLn "Invalid order"
+handle List {listSort, listReverse, listFilter, listDetail} = do
+  conn <- askConn
+  liftIO $ Session.reconcileSessions conn
+  games <- liftIO $ DB.getAllGamesWithLocal conn
+  sorted <- case listSort of
+    "title" -> pure $ sortOn (\g -> g.game.title) games
+    "lastPlay" -> pure $ sortOn (\g -> g.game.lastPlay) games
+    "createDate" -> pure $ sortOn (\g -> g.game.createDate) games
+    "releaseDate" -> pure $ sortOn (\g -> g.game.releaseDate) games
+    "rating" -> pure $ sortOn (\g -> g.game.rating) games
+    other ->
+      throwR $
+        "unknown sort field: "
+          <> other
+          <> "  valid: title|lastPlay|createDate|releaseDate|rating"
+  let ordered = if listReverse then reverse sorted else sorted
+  -- TODO: apply listFilter DSL
+  liftIO $
+    if listDetail
+      then forM_ ordered printGame
+      else printGames ordered
 
--- romiPutStrLn $ "Result: " <> T.pack ()
+-- ── stat ──────────────────────────────────────────────────
 
--- let payload =
---       object
---         [ "filters" .= [["title", "=", title']],
---           "fields" .= "title coreId description tags rating released developer links",
---           "sort" .= "title",
---           "results" .= (10 :: Int),
---           "page" .= (1 :: Int)
---         ]
+handle Stats {statsCoreIds, statsFilter} = do
+  conn <- askConn
+  liftIO $ Session.reconcileSessions conn
+  all' <- liftIO $ DB.getAllGamesWithLocal conn
+  let targets =
+        if null statsCoreIds
+          then all'
+          else filter (\g -> g.game.coreId.unGameId `elem` statsCoreIds) all'
+  -- TODO: apply statsFilter DSL
+  when (null targets) $ throwR "no matching games"
+  liftIO $ forM_ targets printGame
 
--- r <- liftIO $ runReq defaultHttpConfig $ do
---   req
---     POST
---     (https "api.vndb.org" /: "v2" /: "vn")
---     (ReqBodyJson payload)
---     jsonResponse
---     mempty
+-- ── timeline ─────────────────────────────────────────────
 
--- case responseBody r of
---   Right (json) -> do
---     case json ^? key "results" . _Array of
---       Just results | not (V.null results) -> do
---         let first = V.head results
---         case parseEither parseGameCore first of
---           Right newGame -> do
---             saveRootStates $ rootState {gameCore = gameCore rootState ++ [newGame]}
---             romiPutStrLn $ "Fetched and added: " <> title newGame
---           Left err -> throwE $ T.pack err
---       _ -> throwE "VNDB returned empty or no match"
---   Left err -> throwE $ T.pack $ "VNDB request failed: " ++ show err
-handle (List sort' reverse' filterDsl' detailed') = do
-  rootState <- loadRootStates
-  let games = gameCore rootState
-  sorted <- case sort' of
-    "title" -> pure $ sortOn (\g -> g.title) games
-    "lastPlay" -> pure $ sortOn (\g -> g.lastPlay) games
-    "createDate" -> pure $ sortOn (\g -> g.createDate) games
-    "releaseDate" -> pure $ sortOn (\g -> g.releaseDate) games
-    "rating" -> pure $ sortOn (\g -> g.rating) games
-    _ -> throwE "Invalid sort option, must be one of: title, lastPlay, createDate, releaseDate, rating"
-  let reversed = if reverse' then Prelude.reverse sorted else sorted
-  let filtered = {- if filterDsl' == "" then reversed else filter (\g -> T.isInfixOf filterDsl' (g.title)) -} reversed
-  romiPutStrLn "Listing games:"
-  mapM_
-    ( \g -> do
-        romiPutStrLn $ g.title <> " (" <> unGameId g.coreId <> ")"
-        when detailed' $ do
-          romiPutStrLn $ "  Description: " <> g.description
-          romiPutStrLn $ "  Sessions: " <> T.pack (show $ length $ playTimelines g)
-          romiPutStrLn $ "  Total time: " <> T.pack (show $ sum $ map duration $ playTimelines g) <> "s"
-    )
-    filtered
-handle (Stats coreIds' filterDsl') = do
-  rootState <- loadRootStates
-  let games = gameCore rootState
-  let targets = if null coreIds' then games else filter (\g -> unGameId g.coreId `elem` coreIds') games
-  let filtered = {- if filterDsl' == "" then targets else filter (\g -> T.isInfixOf filterDsl' (g.title)) -} targets
-  romiPutStrLn "Stats:"
-  mapM_
-    ( \g -> do
-        let total = sum $ map duration $ playTimelines g
-        romiPutStrLn $ g.title <> ":"
-        romiPutStrLn $ "  Total play time: " <> T.pack (show total) <> " seconds"
-        romiPutStrLn $ "  Sessions: " <> T.pack (show $ length $ playTimelines g)
-        romiPutStrLn $ "  Last play: " <> T.pack (show $ lastPlay g)
-    )
-    filtered
-handle (Timeline coreIds' filterDsl') = do
-  rootState <- loadRootStates
-  let games = gameCore rootState
-  let targets = if null coreIds' then games else filter (\g -> unGameId (g.coreId) `elem` coreIds') games
-  let filtered = {- if filterDsl' == "" then targets else filter (\g -> T.isInfixOf filterDsl' (g.title)) -} targets
-  romiPutStrLn "Timeline:"
-  mapM_
-    ( \g -> do
-        romiPutStrLn $ g.title <> " timelines:"
-        mapM_ (\s -> romiPutStrLn $ "  " <> T.pack (show $ start s) <> " -> " <> T.pack (show $ end s) <> " (" <> T.pack (show $ duration s) <> "s)") $ playTimelines g
-    )
-    filtered
-handle (Config key' value') = do
-  romiPutStrLn $ "Set config " <> key' <> " = " <> value'
-  pure ()
-handle (Use coreId' path') = do
-  rootState <- loadRootStates
-  let targetId = GameId coreId'
-  let newLocals = map (\p -> if localId p == targetId then p {programFile = path'} else p) $ localPaths rootState
-  when (newLocals == localPaths rootState) $ throwE $ "No local path found for id " <> T.unpack coreId'
-  saveRootStates $ rootState {localPaths = newLocals}
-  romiPutStrLn $ "Updated path for " <> coreId' <> " to " <> path'
-handle (Update coreId' keepName' fetch') = do
-  rootState <- loadRootStates
-  let targetId = GameId coreId'
-  case find (\g -> g.coreId == targetId) $ gameCore rootState of
-    Just oldG -> do
-      romiPutStrLn $ "Updating " <> coreId' <> " (keep name: " <> T.pack (show keepName') <> ", fetch: " <> T.pack (show fetch') <> ")"
-      let newTitle = if keepName' then oldG.title else "Updated Title"
-      let newGame = oldG {title = newTitle, updateDate = 1729000000}
-      let newCores = map (\g -> if g.coreId == targetId then newGame else g) $ gameCore rootState
-      saveRootStates $ rootState {gameCore = newCores}
-      romiPutStrLn "Update completed"
-    Nothing -> throwE $ "No game found for id " <> T.unpack coreId'
-handle (Info coreId') = do
-  rootState <- loadRootStates
-  let targetId = GameId coreId'
-  case find (\g -> g.coreId == targetId) $ gameCore rootState of
-    Just g -> do
-      romiPutStrLn $ "Info for " <> coreId'
-      romiPutStrLn $ "Title: " <> g.title
-      romiPutStrLn $ "Description: " <> g.description
-      romiPutStrLn $ "Tags: " <> T.pack (show g.tags)
-      romiPutStrLn $ "Total play time: " <> T.pack (show $ sum $ map duration $ playTimelines g) <> " seconds"
-      romiPutStrLn $ "Last play: " <> T.pack (show $ lastPlay g)
-      romiPutStrLn $ "Links: " <> T.pack (show $ map (\l -> l.name) g.links)
-    Nothing -> throwE $ "No game found for id " <> T.unpack coreId'
-handle Sync = do
-  romiPutStrLn "Syncing games"
+handle Timeline {tlCoreIds, tlFilter} = do
+  conn <- askConn
+  liftIO $ Session.reconcileSessions conn
+  all' <- liftIO $ DB.getAllGames conn
+  let targets =
+        if null tlCoreIds
+          then all'
+          else filter (\g -> g.coreId.unGameId `elem` tlCoreIds) all'
+  -- TODO: apply tlFilter DSL
+  when (null targets) $ throwR "no matching games"
+  liftIO $ forM_ targets $ \g ->
+    render $
+      vsep
+        [ bold_ (pretty g.title)
+            <+> dim_ (pretty (T.pack (show (length g.playTimelines)) <> " sessions")),
+          indent 2 $ vsep (map tlRow g.playTimelines),
+          emptyDoc
+        ]
+  where
+    tlRow :: PlayTimeline -> Doc AnsiStyle
+    tlRow tl =
+      dim_ "·"
+        <+> fmtDate tl.start
+        <+> dim_ "→"
+        <+> fmtDate tl.end
+        <+> dim_ "|"
+        <+> fmtSeconds tl.duration
+
+-- ── use ───────────────────────────────────────────────────
+
+handle Use {useCoreId, useExePath, useSavePath, useGuide} = do
+  conn <- askConn
+  _ <- requireGame useCoreId
+  liftIO $ do
+    DB.upsertLocalPath
+      conn
+      LocalPath
+        { localId = GameId useCoreId,
+          programFile = useExePath,
+          savePath = useSavePath,
+          guideFile = useGuide
+        }
+    ok $ dim_ "exe →" <+> pretty useExePath
+
+-- ── info ──────────────────────────────────────────────────
+
+handle Info {infoCoreId} = do
+  conn <- askConn
+  liftIO $ Session.reconcileSessions conn
+  mgwl <- liftIO $ DB.getGameWithLocal conn infoCoreId
+  case mgwl of
+    Nothing -> throwR ("game not found: " <> infoCoreId)
+    Just gwl -> liftIO $ printGame gwl
+
+-- ── status ────────────────────────────────────────────────
+
+handle Status = do
+  sessions <- liftIO Session.listSessions
+  if null sessions
+    then liftIO $ printLn (dim_ "no games running.")
+    else liftIO $ forM_ sessions $ \s -> do
+      alive <- Session.isPidAlive s.fooPid
+      printLn $
+        (if alive then annotate (color Green) "●" else annotate (color Yellow) "?")
+          <+> bold_ (pretty s.gameId)
+          <+> dim_ "|"
+          <+> fmtSeconds s.activeTime
+          <+> dim_ ("pid " <> pretty s.fooPid)
+
+-- ── sync ──────────────────────────────────────────────────
+
+handle Sync =
+  -- TODO：读 config 取 gh token，序列化 DB 数据，push 到 gh repo
+  throwR "sync not yet implemented"
+-- ── config ────────────────────────────────────────────────
+
+handle Config {} =
+  -- TODO：定义 AppConfig 类型，load/save config 文件，按 key 更新
+  throwR "config not yet implemented"
