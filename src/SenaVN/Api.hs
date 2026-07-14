@@ -6,7 +6,6 @@ import Data.Maybe (fromMaybe)
 import Data.Ord (Down (Down), comparing)
 import Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.Text.IO as TIO
 import Network.HTTP.Req
 import SenaVN.Types
 

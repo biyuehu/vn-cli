@@ -1,1 +1,1 @@
-alias sena=./dist-newstyle/build/x86_64-windows/ghc-9.8.4/SenaVN-2.0.0.0/x/SenaVN/build/SenaVN/SenaVN.exe
+alias sena=dist-newstyle/build/x86_64-windows/ghc-9.8.2/SenaVN-2.0.0.0/x/SenaVN/build/SenaVN/SenaVN.exe

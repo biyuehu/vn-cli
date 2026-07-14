@@ -110,7 +110,7 @@ truncated n t
   | otherwise = pretty (T.take (n - 1) t <> "…")
 
 rule :: Doc AnsiStyle
-rule = dim_ (pretty (replicate 58 '─'))
+rule = dim_ (pretty (replicate 75 '─'))
 
 -- key-value 行，key 固定宽度右对齐
 kv :: Int -> Text -> Doc AnsiStyle -> Doc AnsiStyle
@@ -216,10 +216,6 @@ prettyGameDetail gwl =
     linksSection
       | null gwl.game.links = []
       | otherwise = [linksList gwl.game.links]
-
--- ────────────────────────────────────────────
--- GameWithLocal 列表视图
--- ────────────────────────────────────────────
 
 statusDot :: GameWithLocal -> Doc AnsiStyle
 statusDot gwl

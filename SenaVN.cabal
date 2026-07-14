@@ -30,7 +30,7 @@ common shared-properties
   build-depends:
     aeson,
     aeson-pretty,
-    base ^>=4.19.2.0,
+    base ^>=4.19,
     bytestring,
     directory,
     filepath,

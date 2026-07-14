@@ -50,8 +50,6 @@ import System.FilePath ((</>))
 
 getAppDir :: IO FilePath
 getAppDir = do
-  -- TODO Windows：改用 System.Win32.Info.getWindowsDirectory
-  --              或读 %APPDATA% 环境变量
   home <- getHomeDirectory
   let dir = home </> ".sena"
   createDirectoryIfMissing True dir
