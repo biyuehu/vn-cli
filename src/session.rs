@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionData {
-    pub game_id: String,
-    pub start_time: i64,
-    pub last_heartbeat: i64,
-    pub active_time: i64, // 秒，窗口在前台的累计时间
-    pub foo_pid: i64,
+  pub game_id: String,
+  pub start_time: i64,
+  pub last_heartbeat: i64,
+  pub active_time: i64, // 秒，窗口在前台的累计时间
+  pub foo_pid: i64,
 }
