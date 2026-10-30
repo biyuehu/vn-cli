@@ -8,7 +8,7 @@ import Control.Monad.IO.Class (liftIO)
 import Data.Aeson (eitherDecode)
 import Data.Aeson.Encode.Pretty (encodePretty)
 import qualified Data.ByteString.Lazy as BL
-import Data.List (sortOn)
+import Data.List (sortOn, uncons)
 import Data.Maybe (fromMaybe, isJust)
 import Data.Ord (Down (..))
 import Data.Text (Text)
@@ -24,6 +24,7 @@ import qualified SenaVN.DB as DB
 import SenaVN.Pretty
 import qualified SenaVN.Session as Session
 import SenaVN.Types
+
 import SenaVN.Utils (randomOne)
 import System.Console.Haskeline (defaultSettings, getInputLine, runInputT)
 import System.Directory (findExecutable)
@@ -65,7 +66,7 @@ pickResult :: Int -> [a] -> Maybe a
 pickResult _ [] = Nothing
 pickResult n xs
   | n >= 1 && n <= length xs = Just (xs !! (n - 1))
-  | otherwise = Just (head xs) -- 超出范围退化到第一条
+  | otherwise = fst <$> uncons xs
 
 -- 将 FetchGameData 应用到 GameCore
 applyFetch :: Bool -> GameCore -> FetchGameData -> GameCore
@@ -88,7 +89,8 @@ applyFetch keepName g f =
 applyMeta :: GameCore -> MetaOptions -> GameCore
 applyMeta g m =
   g
-    { vndbId = m.metaVndbId <|> g.vndbId, -- 优先采用新输入的 vndbId，否则沿用旧值
+    { coreId = g.coreId,
+      vndbId = m.metaVndbId <|> g.vndbId, -- 优先采用新输入的 vndbId，否则沿用旧值
       developer = fromMaybe g.developer m.metaDeveloper,
       releaseDate = fromMaybe g.releaseDate m.metaReleaseDate,
       rating = fromMaybe g.rating m.metaRating,
@@ -367,7 +369,7 @@ handle Fetch {fetchName, fetchOrder} = do
 
 -- ── list ──────────────────────────────────────────────────
 
-handle List {listSort, listReverse, listFilter, listDetail} = do
+handle List {listSort, listReverse, listFilter = _, listDetail} = do
   conn <- askConn
   liftIO $ Session.reconcileSessions conn
   games <- liftIO $ DB.getAllGamesWithLocal conn
@@ -391,7 +393,7 @@ handle List {listSort, listReverse, listFilter, listDetail} = do
 
 -- ── stat ──────────────────────────────────────────────────
 
-handle Stats {statsCoreIds, statsFilter} = do
+handle Stats {statsCoreIds, statsFilter = _} = do
   conn <- askConn
   liftIO $ Session.reconcileSessions conn
   all' <- liftIO $ DB.getAllGamesWithLocal conn
@@ -405,7 +407,7 @@ handle Stats {statsCoreIds, statsFilter} = do
 
 -- ── timeline ─────────────────────────────────────────────
 
-handle Timeline {tlCoreIds, tlFilter} = do
+handle Timeline {tlCoreIds, tlFilter = _} = do
   conn <- askConn
   liftIO $ Session.reconcileSessions conn
   all' <- liftIO $ DB.getAllGames conn
