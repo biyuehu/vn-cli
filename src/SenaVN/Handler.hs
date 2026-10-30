@@ -2,16 +2,18 @@
 
 module SenaVN.Handler (handle) where
 
+import Control.Applicative ((<|>))
 import Control.Monad (forM_, when)
 import Control.Monad.IO.Class (liftIO)
-import Data.Aeson (eitherDecode, encode)
+import Data.Aeson (eitherDecode)
+import Data.Aeson.Encode.Pretty (encodePretty)
 import qualified Data.ByteString.Lazy as BL
 import Data.List (sortOn)
 import Data.Maybe (fromMaybe, isJust)
 import Data.Ord (Down (..))
 import Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.Text.IO as TIO
+
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Prettyprinter
 import Prettyprinter.Render.Terminal
@@ -23,11 +25,13 @@ import SenaVN.Pretty
 import qualified SenaVN.Session as Session
 import SenaVN.Types
 import SenaVN.Utils (randomOne)
+import System.Console.Haskeline (defaultSettings, getInputLine, runInputT)
+import System.Directory (findExecutable)
 import System.Environment (lookupEnv)
 import System.FilePath ((</>))
 import System.IO (hClose, stdout)
 import System.IO.Temp (withSystemTempFile)
-import System.Process (CreateProcess (..), StdStream (..), createProcess, proc)
+import System.Process (CreateProcess (..), StdStream (..), callProcess, createProcess, proc)
 
 now :: IO Int
 now = round <$> getPOSIXTime
@@ -84,7 +88,7 @@ applyFetch keepName g f =
 applyMeta :: GameCore -> MetaOptions -> GameCore
 applyMeta g m =
   g
-    { vndbId = m.metaVndbId <> g.vndbId, -- Maybe 的 <> 取第一个 Just
+    { vndbId = m.metaVndbId <|> g.vndbId, -- 优先采用新输入的 vndbId，否则沿用旧值
       developer = fromMaybe g.developer m.metaDeveloper,
       releaseDate = fromMaybe g.releaseDate m.metaReleaseDate,
       rating = fromMaybe g.rating m.metaRating,
@@ -92,7 +96,6 @@ applyMeta g m =
       tags = if null m.metaTags then g.tags else m.metaTags
     }
 
--- 空白 GameCore
 emptyGameCore :: Text -> Text -> Int -> GameCore
 emptyGameCore gid name ts =
   GameCore
@@ -114,27 +117,48 @@ emptyGameCore gid name ts =
       developer = ""
     }
 
--- 用 $EDITOR（fallback notepad.exe）编辑 GameCore JSON
--- 需要在 cabal 里加 aeson、temporary、process
+-- 寻找外部编辑器：$VISUAL -> $EDITOR -> nvim -> vim -> nano -> vi，不使用 notepad 兜底
+findEditor :: IO (Maybe FilePath)
+findEditor = do
+  mVisual <- lookupEnv "VISUAL"
+  mEditor <- lookupEnv "EDITOR"
+  case filter (not . null) (maybe [] pure mVisual ++ maybe [] pure mEditor) of
+    (ed : _) -> pure (Just ed)
+    [] -> findInPath ["nvim", "vim", "nano", "vi"]
+  where
+    findInPath [] = pure Nothing
+    findInPath (x : xs) = do
+      mPath <- findExecutable x
+      case mPath of
+        Just _ -> pure (Just x)
+        Nothing -> findInPath xs
+
+-- 用外部编辑器编辑 GameCore JSON，并强制还原核心不可变字段
 openEditor :: GameCore -> Romi GameCore
 openEditor g = do
-  editor <- liftIO $ fromMaybe "notepad.exe" <$> lookupEnv "EDITOR"
+  mEditor <- liftIO findEditor
+  editor <- case mEditor of
+    Nothing ->
+      throwR "no editor found: please set $VISUAL or $EDITOR, or install nvim/vim/nano/vi"
+    Just ed -> pure ed
   raw <- liftIO $
     withSystemTempFile "sena-edit-.json" $ \path h -> do
-      BL.hPut h (encode g)
+      BL.hPut h (encodePretty g)
       hClose h
-      -- TODO Windows：createProcess 改用 CREATE_NEW_CONSOLE 让编辑器有窗口
-      _ <-
-        createProcess
-          (proc editor [path])
-            { std_in = Inherit,
-              std_out = Inherit,
-              std_err = Inherit
-            }
+      let (prog, args) = case words editor of
+            (p : rest) -> (p, rest)
+            [] -> (editor, [])
+      callProcess prog (args ++ [path])
       BL.readFile path
   case eitherDecode raw of
     Left err -> throwR ("parse error after editor: " <> T.pack err)
-    Right g' -> pure g'
+    Right g' ->
+      pure
+        g'
+          { coreId = g.coreId,
+            createDate = g.createDate,
+            playTimelines = g.playTimelines
+          }
 
 -- 启动 foo.exe（detached）
 spawnFoo :: Text -> Text -> Text -> IO ()
@@ -177,6 +201,16 @@ ok msg = printLn $ annotate (color Green) "✓" <+> msg
 
 err_ :: Doc AnsiStyle -> IO ()
 err_ msg = printLn $ annotate (color Red) "✗" <+> msg
+
+-- 交互式确认
+askConfirmation :: Text -> IO Bool
+askConfirmation prompt = do
+  ans <- runInputT defaultSettings (getInputLine (T.unpack prompt))
+  case ans of
+    Just s ->
+      let trimmed = T.toLower (T.strip (T.pack s))
+       in pure (trimmed == "y" || trimmed == "yes")
+    Nothing -> pure False
 
 -- ────────────────────────────────────────────
 -- handle
@@ -256,13 +290,15 @@ handle Edit {editCoreId, editFetch, editApply, editOrder, editKeepName, editMeta
 handle Remove {removeCoreId, removeHard} = do
   conn <- askConn
   g <- requireGame removeCoreId
-  -- TODO：加 confirmation prompt（haskeline readline）
-  liftIO $ do
-    DB.deleteGame conn removeCoreId
-    ok $
-      bold_ (pretty g.title)
-        <+> dim_ "removed."
-        <> if removeHard then dim_ " (TODO: cloud remove)" else mempty
+  confirmed <- liftIO $ askConfirmation ("Are you sure you want to delete '" <> g.title <> "'? [y/N] ")
+  if not confirmed
+    then liftIO $ printLn (dim_ "operation cancelled.")
+    else liftIO $ do
+      DB.deleteGame conn removeCoreId
+      ok $
+        bold_ (pretty g.title)
+          <+> dim_ "removed."
+          <> if removeHard then dim_ " (TODO: cloud remove)" else mempty
 
 -- ── run ──────────────────────────────────────────────────
 

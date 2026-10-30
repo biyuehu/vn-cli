@@ -72,7 +72,7 @@ fetchFromVndb vndbBy = runReq defaultHttpConfig $ do
                   VndbName name' -> ["search", "=", name']
                   VndbId vId -> ["id", "=", vId],
               "fields"
-                .= ("id, title, image.url, released, titles.title, length_minutes, rating, screenshots.url, tags.name, tags.rating, developers.name, extlinks.name, extlinks.url" :: Text)
+                .= ("id, title, image.url, released, titles.title, length_minutes, rating, screenshots.url, tags.name, tags.rating, developers.name, extlinks.name, extlinks.url, description" :: Text)
             ]
       )
       jsonResponse
