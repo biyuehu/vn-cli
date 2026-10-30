@@ -58,7 +58,7 @@ instance ToJSON SessionData
 
 getSessionsDir :: IO FilePath
 getSessionsDir = do
-  -- TODO Windows：改用 %APPDATA%\sena\sessions
+
   home <- getHomeDirectory
   let dir = home </> ".sena" </> "sessions"
   createDirectoryIfMissing True dir

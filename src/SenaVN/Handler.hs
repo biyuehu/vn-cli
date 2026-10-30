@@ -201,8 +201,8 @@ printLn d = render (d <> line)
 ok :: Doc AnsiStyle -> IO ()
 ok msg = printLn $ annotate (color Green) "✓" <+> msg
 
-err_ :: Doc AnsiStyle -> IO ()
-err_ msg = printLn $ annotate (color Red) "✗" <+> msg
+
+
 
 -- 交互式确认
 askConfirmation :: Text -> IO Bool
@@ -353,19 +353,18 @@ handle Run {runTarget, runRandom, runRecent, runLast} = do
 handle Fetch {fetchName, fetchOrder} = do
   results <- liftIO $ fetchFromVndb (VndbName fetchName)
   when (null results) $ throwR "no results found"
-  liftIO $ case fetchOrder of
-    0 -> printFetchResults results
-    n ->
-      if n >= 1 && n <= length results
-        then printFetchResult n (results !! (n - 1))
-        else
-          err_
-            ( "invalid --order "
-                <> pretty n
-                <> ", got "
-                <> pretty (length results)
-                <> " results"
-            )
+  case fetchOrder of
+    0 -> liftIO $ printFetchResults results
+    n
+      | n >= 1 && n <= length results ->
+          liftIO $ printFetchResult n (results !! (n - 1))
+      | otherwise ->
+          throwR $
+            "invalid --order "
+              <> T.pack (show n)
+              <> ", got "
+              <> T.pack (show (length results))
+              <> " results" 
 
 -- ── list ──────────────────────────────────────────────────
 

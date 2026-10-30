@@ -1,11 +1,16 @@
 module SenaVN.Api (transformVNData, fetchFromVndb) where
 
+import Control.Applicative ((<|>))
 import Data.Aeson (object, (.=))
 import Data.List (sortBy)
 import Data.Maybe (fromMaybe)
 import Data.Ord (Down (Down), comparing)
 import Data.Text (Text)
 import qualified Data.Text as T
+import Data.Time.Calendar (Day)
+import Data.Time.Clock (UTCTime (..), secondsToDiffTime)
+import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
+import Data.Time.Format (defaultTimeLocale, parseTimeM)
 import Network.HTTP.Req
 import SenaVN.Types
 
@@ -18,7 +23,7 @@ transformVNData raw =
       description = fromMaybe "" itemDesc,
       tags = tagsList,
       expectedPlayHours = maybe 0 (\m -> fromIntegral m / 60) mins,
-      releaseDate = parseDateToTimestamp rel,
+      releaseDate = maybe 0 parseDateToTimestamp rel,
       rating = maybe 0 (/ 10) rat,
       developer = devName,
       images = imgList,
@@ -42,22 +47,26 @@ transformVNData raw =
     titlesList = map (\(VNTitle t) -> t) itemTitles
     tagsList =
       take 30 $
-        map (\(VNTag n _) -> n) $
-          sortBy (comparing (\(VNTag _ r) -> Down r)) $
-            filter (\(VNTag _ r) -> r >= 2.0) itemTags
+        map (\t -> t.name) $
+          sortBy (comparing (\t -> Down t.rating)) $
+            filter (\t -> fromMaybe 0 t.spoiler == 0 && t.rating >= 2.0) itemTags
     devName = case devs of
       (VNDeveloper n : _) -> n
       [] -> ""
     imgList = map (\(VNScreenshot u) -> u) screens
 
-    parseDateToTimestamp dateStr = case T.splitOn "-" dateStr of
-      [y, m, d] ->
-        let year = read (T.unpack y) :: Int
-            month = read (T.unpack m) :: Int
-            day = read (T.unpack d) :: Int
-            days = (year - 1970) * 365 + month * 30 + day
-         in days * 86400
-      _ -> 0
+    parseDateToTimestamp dateStr =
+      let str = T.unpack (T.strip dateStr)
+          mDay :: Maybe Day
+          mDay =
+            parseTimeM True defaultTimeLocale "%Y-%m-%d" str
+              <|> parseTimeM True defaultTimeLocale "%Y-%m" str
+              <|> parseTimeM True defaultTimeLocale "%Y" str
+       in case mDay of
+            Just day ->
+              let utc = UTCTime day (secondsToDiffTime 0)
+               in round (utcTimeToPOSIXSeconds utc)
+            Nothing -> 0
 
 fetchFromVndb :: VndbBy -> IO [FetchGameData]
 fetchFromVndb vndbBy = runReq defaultHttpConfig $ do
@@ -72,7 +81,7 @@ fetchFromVndb vndbBy = runReq defaultHttpConfig $ do
                   VndbName name' -> ["search", "=", name']
                   VndbId vId -> ["id", "=", vId],
               "fields"
-                .= ("id, title, image.url, released, titles.title, length_minutes, rating, screenshots.url, tags.name, tags.rating, developers.name, extlinks.name, extlinks.url, description" :: Text)
+                .= ("id, title, image.url, released, titles.title, length_minutes, rating, screenshots.url, tags.name, tags.rating, tags.spoiler, developers.name, extlinks.name, extlinks.url, description" :: Text)
             ]
       )
       jsonResponse

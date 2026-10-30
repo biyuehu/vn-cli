@@ -86,7 +86,7 @@ newtype VNTitle = VNTitle {title :: Text} deriving (Show, Generic, FromJSON)
 
 newtype VNScreenshot = VNScreenshot {url :: Text} deriving (Show, Generic, FromJSON)
 
-data VNTag = VNTag {name :: Text, rating :: Double} deriving (Show, Generic, FromJSON)
+data VNTag = VNTag {name :: !Text, rating :: !Double, spoiler :: !(Maybe Int)} deriving (Show, Generic, FromJSON)
 
 newtype VNDeveloper = VNDeveloper {name :: Text} deriving (Show, Generic, FromJSON)
 
@@ -100,7 +100,7 @@ data VNRawItem = VNRawItem
     description :: !(Maybe Text),
     tags :: ![VNTag],
     length_minutes :: !(Maybe Int),
-    released :: !Text,
+    released :: !(Maybe Text),
     rating :: !(Maybe Double),
     developers :: ![VNDeveloper],
     extlinks :: ![VNExtLink]

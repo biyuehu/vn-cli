@@ -1,7 +1,9 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Main where
 
+import Control.Exception (SomeException, catch, fromException, throwIO)
 import Data.Word (Word32)
 import Options.Applicative
 import Prettyprinter
@@ -10,13 +12,14 @@ import SenaVN.Command (commandParser)
 import SenaVN.Core (Env (Env), runRomi)
 import SenaVN.DB (withDB)
 import SenaVN.Handler (handle)
+import System.Exit (ExitCode, exitFailure)
 import System.IO (hSetEncoding, stderr, stdout, utf8)
 
 #ifdef mingw32_HOST_OS
-import Data.Int  (Int32)
+import Data.Int (Int32)
 
 foreign import ccall "SetConsoleOutputCP" setConsoleOutputCP :: Word32 -> IO Int32
-foreign import ccall "SetConsoleCP"       setConsoleCP       :: Word32 -> IO Int32
+foreign import ccall "SetConsoleCP" setConsoleCP :: Word32 -> IO Int32
 #endif
 
 main :: IO ()
@@ -28,14 +31,24 @@ main = do
   hSetEncoding stderr utf8
 #endif
   cmd <- execParser opts
-  result <- withDB $ \conn ->
-    runRomi (Env conn) $ handle cmd
-  case result of
-    Left err ->
-      renderIO stdout . layoutPretty defaultLayoutOptions $
-        annotate (color Red) "error" <+> pretty err <> line
-    Right () -> pure ()
+  handleApp cmd `catch` \(e :: SomeException) ->
+    case fromException e of
+      Just (exitCode :: ExitCode) -> throwIO exitCode
+      Nothing -> do
+        renderIO stderr . layoutPretty defaultLayoutOptions $
+          annotate (color Red) "error" <+> pretty (show e) <> line
+        exitFailure
   where
+    handleApp cmd = do
+      result <- withDB $ \conn ->
+        runRomi (Env conn) $ handle cmd
+      case result of
+        Left err -> do
+          renderIO stderr . layoutPretty defaultLayoutOptions $
+            annotate (color Red) "error" <+> pretty err <> line
+          exitFailure
+        Right () -> pure ()
+
     opts =
       info
         (commandParser <**> helper)
