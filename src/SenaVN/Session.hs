@@ -7,6 +7,7 @@ module SenaVN.Session
     listSessions,
     isPidAlive,
     reconcileSessions,
+    getFooPath,
   )
 where
 
@@ -27,8 +28,9 @@ import System.Directory
     removeFile,
     renameFile,
   )
+import System.Environment (getExecutablePath)
 import System.Exit (ExitCode (..))
-import System.FilePath (takeExtension, (</>))
+import System.FilePath (takeDirectory, takeExtension, (</>))
 import System.Process (rawSystem)
 
 -- ────────────────────────────────────────────
@@ -40,10 +42,10 @@ import System.Process (rawSystem)
 
 data SessionData = SessionData
   { gameId :: !Text,
-    exePath :: !Text,
-    startTime :: !Int, -- unix ts，启动时确定，不变
-    lastHeartbeat :: !Int, -- 上次心跳，近似于当前/最终 stop_time
-    activeTime :: !Int, -- 本次游玩秒数，foo 持续更新
+
+    startUnix :: !Int, -- unix ts，启动时确定，不变
+    lastHeartbeatUnix :: !Int, -- 上次心跳，近似于当前/最终 stop_time
+    activeSeconds :: !Int, -- 本次游玩有效秒数，foo 持续更新
     fooPid :: !Int
   }
   deriving (Show, Generic)
@@ -58,9 +60,8 @@ instance ToJSON SessionData
 
 getSessionsDir :: IO FilePath
 getSessionsDir = do
-
   home <- getHomeDirectory
-  let dir = home </> ".sena" </> "sessions"
+  let dir = home </> ".senavn" </> "sessions"
   createDirectoryIfMissing True dir
   pure dir
 
@@ -121,9 +122,12 @@ listSessions = do
 
 getFooPath :: IO FilePath
 getFooPath = do
-  -- TODO：相对 sena.exe 位置查找 foo.exe
-  -- 目前假设在 PATH 里
-  pure "foo.exe"
+  selfExe <- getExecutablePath
+  let siblingFoo = takeDirectory selfExe </> "foo.exe"
+  exists <- doesFileExist siblingFoo
+  if exists
+    then pure siblingFoo
+    else pure "foo.exe"
 
 isPidAlive :: Int -> IO Bool
 isPidAlive pid = do
@@ -148,10 +152,10 @@ reconcileSessions conn = do
     unless alive $ do
       let tl =
             PlayTimeline
-              { start = s.startTime,
-                end = s.lastHeartbeat,
-                duration = s.activeTime
+              { start = s.startUnix,
+                end = s.lastHeartbeatUnix,
+                duration = s.activeSeconds
               }
       DB.upsertPlaySession conn s.gameId tl
-      DB.updateLastPlay conn s.gameId s.lastHeartbeat
+      DB.updateLastPlay conn s.gameId s.lastHeartbeatUnix
       deleteSession s.gameId

@@ -36,9 +36,9 @@ impl Monitor {
   pub fn write_session(&self) {
     let sd = SessionData {
       game_id: self.game_id.clone(),
-      start_time: self.start_time as i64,
-      last_heartbeat: now_secs() as i64,
-      active_time: self.active_time as i64,
+      start_unix: self.start_time as i64,
+      last_heartbeat_unix: now_secs() as i64,
+      active_seconds: self.active_time as i64,
       foo_pid: std::process::id() as i64,
     };
     let tmp = format!("{}.tmp", self.session_file);
@@ -48,14 +48,9 @@ impl Monitor {
     }
   }
 
-  /// 删 session 文件
-  pub fn delete_session(&self) {
-    let _ = fs::remove_file(&self.session_file);
-  }
-
   /// 主监听循环
   pub fn run(&mut self) {
-    let mut sys = System::new_all();
+    let mut sys = System::new();
     let heartbeat_interval = 60u64; // 每 60 秒写一次 session
     let mut last_heartbeat = now_secs();
 
@@ -63,7 +58,8 @@ impl Monitor {
     self.write_session();
 
     loop {
-      sys.refresh_processes(ProcessesToUpdate::All, true);
+      // 99.9% 正常游玩时间：只定向刷新当前游戏这一个 PID，CPU 占用为 0
+      sys.refresh_processes(ProcessesToUpdate::Some(&[self.pid]), true);
 
       if sys.process(self.pid).is_some() {
         // 进程还活着
@@ -79,7 +75,7 @@ impl Monitor {
 
         thread::sleep(Duration::from_secs(1));
       } else {
-        // 目标进程退出，尝试找子进程（部分 gal 启动器会 spawn 子进程）
+        // 目标进程退出，全量刷新一次尝试找子进程（部分 gal 启动器会 spawn 子进程）
         sys.refresh_processes(ProcessesToUpdate::All, true);
         if let Some(child_pid) = self.find_child(&sys) {
           eprintln!("[foo] parent exited, following child pid={}", child_pid);
@@ -93,9 +89,8 @@ impl Monitor {
       }
     }
 
-    // 最终写一次完整数据
+    // 最终写一次完整数据快照，保留给 sena reconcile 入库后删除，foo 自身绝不删 session
     self.write_session();
-    self.delete_session();
   }
 
   fn find_child(&self, sys: &System) -> Option<Pid> {

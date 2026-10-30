@@ -166,13 +166,14 @@ openEditor g = do
 spawnFoo :: Text -> Text -> Text -> IO ()
 spawnFoo gameId gameName exePath = do
   sessDir <- Session.getSessionsDir
+  fooExe <- Session.getFooPath
   let sessionFile = sessDir </> T.unpack gameId <> ".session.json"
-  -- TODO：Windows 下用 DETACHED_PROCESS flag，让 foo.exe 与 sena 完全脱钩
   _ <-
     createProcess
       ( proc
-          "foo.exe"
-          [ "--game-id",
+          fooExe
+          [ "--run",
+            "--game-id",
             T.unpack gameId,
             "--game-name",
             T.unpack gameName,
@@ -184,7 +185,9 @@ spawnFoo gameId gameName exePath = do
       )
         { std_in = NoStream,
           std_out = NoStream,
-          std_err = NoStream
+          std_err = NoStream,
+          create_group = True,
+          detach_console = True
         }
   pure ()
 
@@ -340,13 +343,26 @@ handle Run {runTarget, runRandom, runRecent, runLast} = do
           <> " — run: sena use "
           <> g.coreId.unGameId
           <> " <path>"
-    Just lp -> liftIO $ do
-      spawnFoo g.coreId.unGameId g.title lp.programFile
-      printLn $
-        annotate (color Green) "▶"
-          <+> bold_ (pretty g.title)
-          <> line
-          <> dim_ (pretty lp.programFile)
+    Just lp -> do
+      mSess <- liftIO $ Session.readSession g.coreId.unGameId
+      case mSess of
+        Just sess -> do
+          alive <- liftIO $ Session.isPidAlive sess.fooPid
+          when alive $
+            throwR $
+              "game is already running: "
+                <> g.title
+                <> " (PID: "
+                <> T.pack (show sess.fooPid)
+                <> ")"
+        Nothing -> pure ()
+      liftIO $ do
+        spawnFoo g.coreId.unGameId g.title lp.programFile
+        printLn $
+          annotate (color Green) "▶"
+            <+> bold_ (pretty g.title)
+            <> line
+            <> dim_ (pretty lp.programFile)
 
 -- ── fetch ─────────────────────────────────────────────────
 
@@ -463,6 +479,8 @@ handle Info {infoCoreId} = do
 -- ── status ────────────────────────────────────────────────
 
 handle Status = do
+  conn <- askConn
+  liftIO $ Session.reconcileSessions conn
   sessions <- liftIO Session.listSessions
   if null sessions
     then liftIO $ printLn (dim_ "no games running.")
@@ -472,7 +490,7 @@ handle Status = do
         (if alive then annotate (color Green) "●" else annotate (color Yellow) "?")
           <+> bold_ (pretty s.gameId)
           <+> dim_ "|"
-          <+> fmtSeconds s.activeTime
+          <+> fmtSeconds s.activeSeconds
           <+> dim_ ("pid " <> pretty s.fooPid)
 
 -- ── sync ──────────────────────────────────────────────────

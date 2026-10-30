@@ -51,7 +51,7 @@ import System.FilePath ((</>))
 getAppDir :: IO FilePath
 getAppDir = do
   home <- getHomeDirectory
-  let dir = home </> ".sena"
+  let dir = home </> ".senavn"
   createDirectoryIfMissing True dir
   pure dir
 

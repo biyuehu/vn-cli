@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct SessionData {
   pub game_id: String,
-  pub start_time: i64,
-  pub last_heartbeat: i64,
-  pub active_time: i64, // 秒，窗口在前台的累计时间
+  pub start_unix: i64,
+  pub last_heartbeat_unix: i64,
+  pub active_seconds: i64,
   pub foo_pid: i64,
 }
