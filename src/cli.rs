@@ -1,14 +1,14 @@
 #[derive(Debug)]
 pub enum Mode {
-  /// 启动并监听一个游戏进程
   Run {
     game_id: String,
     game_name: String,
     exe_path: String,
     session_file: String,
   },
-  /// 检查一个 PID 是否存活（exit 0 = 存活，exit 1 = 死亡）
-  CheckPid { pid: u32 },
+  CheckPid {
+    pid: u32,
+  },
 }
 
 pub fn parse_args() -> Result<Mode, String> {
@@ -23,7 +23,6 @@ pub fn parse_args() -> Result<Mode, String> {
       Ok(Mode::CheckPid { pid })
     }
     Some("--run") => {
-      // --run --game-id <id> --game-name <name> --exe-path <path> --session <file>
       let get = |flag: &str| -> Result<String, String> {
         args
           .windows(2)

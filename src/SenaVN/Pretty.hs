@@ -61,9 +61,6 @@ white_ = annotate (color White)
 dim_ :: Doc AnsiStyle -> Doc AnsiStyle
 dim_ = annotate (colorDull Black)
 
--- magenta_ :: Doc AnsiStyle -> Doc AnsiStyle
--- magenta_ = annotate (color Magenta)
-
 fmtDate :: Int -> Doc AnsiStyle
 fmtDate 0 = dim_ "—"
 fmtDate ts =
@@ -86,7 +83,6 @@ fmtSeconds s =
    in green_ . pretty $
         if h > 0 then show h <> "h " <> show m <> "m" else show m <> "m"
 
--- Double 小时 -> "12h 30m"
 fmtHours :: Double -> Doc AnsiStyle
 fmtHours 0 = dim_ "—"
 fmtHours d =
@@ -112,7 +108,6 @@ truncated n t
 rule :: Doc AnsiStyle
 rule = dim_ (pretty (replicate 75 '─'))
 
--- key-value 行，key 固定宽度右对齐
 kv :: Int -> Text -> Doc AnsiStyle -> Doc AnsiStyle
 kv w k v =
   dim_ (pretty (T.replicate (w - T.length k) " " <> k <> "  ")) <> v
@@ -181,7 +176,6 @@ prettyGameDetail gwl =
             indent 4 (truncated 240 gwl.game.description)
           ]
 
-    -- 明确类型签名，避免 FlexibleContexts 推断问题
     sessionSection :: [Doc AnsiStyle]
     sessionSection
       | null gwl.game.playTimelines = []
@@ -299,17 +293,12 @@ prettyFetchResult idx f =
       | null f.links = []
       | otherwise = [linksList f.links]
 
--- 多条搜索结果，带序号，用于 sena fetch 展示
 prettyFetchResults :: [FetchGameData] -> Doc AnsiStyle
 prettyFetchResults [] = dim_ "  no results."
 prettyFetchResults fs =
   vsep (zipWith prettyFetchResult [1 ..] fs)
     <> line
     <> dim_ (pretty ("  " <> show (length fs) <> " result(s)  ·  use --order N for details"))
-
--- ────────────────────────────────────────────
--- IO 输出
--- ────────────────────────────────────────────
 
 render :: Doc AnsiStyle -> IO ()
 render = renderIO stdout . layoutPretty defaultLayoutOptions

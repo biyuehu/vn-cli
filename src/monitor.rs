@@ -32,7 +32,6 @@ impl Monitor {
     }
   }
 
-  /// 写 session 文件（原子写：先写 .tmp 再 rename）
   pub fn write_session(&self) {
     let sd = SessionData {
       game_id: self.game_id.clone(),
@@ -48,21 +47,17 @@ impl Monitor {
     }
   }
 
-  /// 主监听循环
   pub fn run(&mut self) {
     let mut sys = System::new();
-    let heartbeat_interval = 60u64; // 每 60 秒写一次 session
+    let heartbeat_interval = 60u64;
     let mut last_heartbeat = now_secs();
 
-    // 先写一次，让 sena status 能立即看到
     self.write_session();
 
     loop {
-      // 99.9% 正常游玩时间：只定向刷新当前游戏这一个 PID，CPU 占用为 0
       sys.refresh_processes(ProcessesToUpdate::Some(&[self.pid]), true);
 
       if sys.process(self.pid).is_some() {
-        // 进程还活着
         if is_window_active(self.pid.as_u32()) {
           self.active_time += 1;
         }
@@ -75,21 +70,18 @@ impl Monitor {
 
         thread::sleep(Duration::from_secs(1));
       } else {
-        // 目标进程退出，全量刷新一次尝试找子进程（部分 gal 启动器会 spawn 子进程）
         sys.refresh_processes(ProcessesToUpdate::All, true);
         if let Some(child_pid) = self.find_child(&sys) {
           eprintln!("[foo] parent exited, following child pid={}", child_pid);
           self.pid = child_pid;
           thread::sleep(Duration::from_secs(1));
         } else {
-          // 真正退出
           eprintln!("[foo] process exited. active={}s", self.active_time);
           break;
         }
       }
     }
 
-    // 最终写一次完整数据快照，保留给 sena reconcile 入库后删除，foo 自身绝不删 session
     self.write_session();
   }
 

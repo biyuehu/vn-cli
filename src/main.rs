@@ -19,9 +19,9 @@ fn main() {
 
     Ok(Mode::CheckPid { pid }) => {
       if is_pid_alive(pid) {
-        std::process::exit(0); // 存活
+        std::process::exit(0);
       } else {
-        std::process::exit(1); // 死亡
+        std::process::exit(1);
       }
     }
 

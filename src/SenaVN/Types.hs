@@ -12,7 +12,7 @@ type Seconds = Int
 type Minutes = Int
 
 data PlayTimeline = PlayTimeline
-  { start :: !Int, -- Unix timestamp (秒)
+  { start :: !Int,
     end :: !Int,
     duration :: !Seconds
   }
@@ -27,16 +27,14 @@ data Link = Link
 data GameCore = GameCore
   { coreId :: !GameId,
     vndbId :: !(Maybe Text),
-    -- bgmId :: !(Maybe Text),
-    updateDate :: !Int, -- Unix timestamp
+    updateDate :: !Int,
     title :: !Text,
     alias :: ![Text],
-    -- cover :: !Text, -- URL 或本地路径
     description :: !Text,
     tags :: ![Text],
     playTimelines :: ![PlayTimeline],
     expectedPlayTime :: !Minutes,
-    lastPlay :: !Int, -- 上次游玩的 timestamp
+    lastPlay :: !Int,
     createDate :: !Int,
     releaseDate :: !Int,
     rating :: !Double,
@@ -80,7 +78,6 @@ data RootState = RootState
     config :: !AppConfig
   }
   deriving (Show, Eq, Generic, FromJSON, ToJSON)
-
 
 newtype VNTitle = VNTitle {title :: Text} deriving (Show, Generic, FromJSON)
 
@@ -127,32 +124,3 @@ data FetchGameData = FetchGameData
 data VNRequest = VNRequest {filters :: [Text], fields :: Text} deriving (Eq, Show, Generic)
 
 data VndbBy = VndbName Text | VndbId Text
-
--- data ApplicationData = ApplicationData
---   { root :: !RootState,
---     cloud :: !CloudData
---   }
-
--- deriving anyclass ()
-
--- data SyncState = SyncState
---   { time           :: !Int
---   , deleteIds      :: ![GameId]
---   , size           :: !Int
---   , visibility     :: !Text
---   , username       :: !Text
---   , bgmUsername    :: !Text
---   , vndbUsername   :: !Text
---   , avatar         :: !Text
---   -- ... 其他 sync 相关字段
---   } deriving stock (Show, Eq, Generic)
---     deriving anyclass (FromJSON, ToJSON)
-
--- -- Settings 可以继续细分
--- data Settings = Settings
---   { -- language :: Text
---     -- theme :: Text
---     -- autoSyncMinutes :: Int
---     -- ...
---   } deriving stock (Show, Eq, Generic)
---     deriving anyclass (FromJSON, ToJSON)

@@ -13,7 +13,6 @@ import Data.Maybe (fromMaybe, isJust)
 import Data.Ord (Down (..))
 import Data.Text (Text)
 import qualified Data.Text as T
-
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Prettyprinter
 import Prettyprinter.Render.Terminal
@@ -24,7 +23,6 @@ import qualified SenaVN.DB as DB
 import SenaVN.Pretty
 import qualified SenaVN.Session as Session
 import SenaVN.Types
-
 import SenaVN.Utils (randomOne)
 import System.Console.Haskeline (defaultSettings, getInputLine, runInputT)
 import System.Directory (findExecutable)
@@ -37,7 +35,6 @@ import System.Process (CreateProcess (..), StdStream (..), callProcess, createPr
 now :: IO Int
 now = round <$> getPOSIXTime
 
--- 找不到游戏就直接 throwR
 requireGame :: Text -> Romi GameCore
 requireGame gid = do
   conn <- askConn
@@ -46,7 +43,6 @@ requireGame gid = do
     Nothing -> throwR ("game not found: " <> gid)
     Just g -> pure g
 
--- 有 path 就写 LocalPath，没有就跳过
 setupLocal :: Text -> Maybe Text -> Romi ()
 setupLocal _ Nothing = pure ()
 setupLocal gid (Just path) = do
@@ -61,14 +57,12 @@ setupLocal gid (Just path) = do
           guideFile = Nothing
         }
 
--- 从 VNDB 结果列表里取第 N 条（1-indexed）
 pickResult :: Int -> [a] -> Maybe a
 pickResult _ [] = Nothing
 pickResult n xs
   | n >= 1 && n <= length xs = Just (xs !! (n - 1))
   | otherwise = fst <$> uncons xs
 
--- 将 FetchGameData 应用到 GameCore
 applyFetch :: Bool -> GameCore -> FetchGameData -> GameCore
 applyFetch keepName g f =
   g
@@ -85,12 +79,11 @@ applyFetch keepName g f =
       links = map (\l -> Link {name = l.name, url = l.url}) f.links
     }
 
--- 将 MetaOptions 定点覆盖到 GameCore
 applyMeta :: GameCore -> MetaOptions -> GameCore
 applyMeta g m =
   g
     { coreId = g.coreId,
-      vndbId = m.metaVndbId <|> g.vndbId, -- 优先采用新输入的 vndbId，否则沿用旧值
+      vndbId = m.metaVndbId <|> g.vndbId,
       developer = fromMaybe g.developer m.metaDeveloper,
       releaseDate = fromMaybe g.releaseDate m.metaReleaseDate,
       rating = fromMaybe g.rating m.metaRating,
@@ -119,7 +112,6 @@ emptyGameCore gid name ts =
       developer = ""
     }
 
--- 寻找外部编辑器：$VISUAL -> $EDITOR -> nvim -> vim -> nano -> vi，不使用 notepad 兜底
 findEditor :: IO (Maybe FilePath)
 findEditor = do
   mVisual <- lookupEnv "VISUAL"
@@ -135,7 +127,6 @@ findEditor = do
         Just _ -> pure (Just x)
         Nothing -> findInPath xs
 
--- 用外部编辑器编辑 GameCore JSON，并强制还原核心不可变字段
 openEditor :: GameCore -> Romi GameCore
 openEditor g = do
   mEditor <- liftIO findEditor
@@ -162,7 +153,6 @@ openEditor g = do
             playTimelines = g.playTimelines
           }
 
--- 启动 foo.exe（detached）
 spawnFoo :: Text -> Text -> Text -> IO ()
 spawnFoo gameId gameName exePath = do
   sessDir <- Session.getSessionsDir
@@ -191,10 +181,6 @@ spawnFoo gameId gameName exePath = do
         }
   pure ()
 
--- ────────────────────────────────────────────
--- Pretty 输出辅助（不引入 Pretty 内部细节）
--- ────────────────────────────────────────────
-
 render :: Doc AnsiStyle -> IO ()
 render = renderIO stdout . layoutPretty defaultLayoutOptions
 
@@ -204,10 +190,6 @@ printLn d = render (d <> line)
 ok :: Doc AnsiStyle -> IO ()
 ok msg = printLn $ annotate (color Green) "✓" <+> msg
 
-
-
-
--- 交互式确认
 askConfirmation :: Text -> IO Bool
 askConfirmation prompt = do
   ans <- runInputT defaultSettings (getInputLine (T.unpack prompt))
@@ -217,13 +199,7 @@ askConfirmation prompt = do
        in pure (trimmed == "y" || trimmed == "yes")
     Nothing -> pure False
 
--- ────────────────────────────────────────────
--- handle
--- ────────────────────────────────────────────
-
 handle :: Command -> Romi ()
--- ── add ──────────────────────────────────────────────────
-
 handle Add {addName, addCoreId, addPath, addNoFetch, addSkip, addOrder, addKeepName, addMeta} = do
   conn <- askConn
   existing <- liftIO $ DB.getGame conn addCoreId
@@ -233,18 +209,14 @@ handle Add {addName, addCoreId, addPath, addNoFetch, addSkip, addOrder, addKeepN
 
   finalGame <-
     if hasMeta addMeta
-      then do
-        -- 提供了 meta option → 直接保存，不 fetch 不 editor
-        pure (applyMeta base addMeta)
+      then pure (applyMeta base addMeta)
       else
         if addNoFetch
           then
-            -- --no-fetch → 跳过 fetch，进 editor（除非 --skip）
             if addSkip
               then pure base
               else openEditor base
           else do
-            -- 默认：fetch + editor（--skip 跳过 editor）
             results <- liftIO $ fetchFromVndb (VndbName addName)
             case pickResult addOrder results of
               Nothing -> throwR "no VNDB results found"
@@ -258,8 +230,6 @@ handle Add {addName, addCoreId, addPath, addNoFetch, addSkip, addOrder, addKeepN
   setupLocal addCoreId addPath
   liftIO $ ok $ bold_ (pretty finalGame.title) <+> dim_ "added."
 
--- ── edit ─────────────────────────────────────────────────
-
 handle Edit {editCoreId, editFetch, editApply, editOrder, editKeepName, editMeta} = do
   conn <- askConn
   g <- requireGame editCoreId
@@ -267,13 +237,10 @@ handle Edit {editCoreId, editFetch, editApply, editOrder, editKeepName, editMeta
 
   finalGame <-
     if hasMeta editMeta
-      then do
-        -- 提供了 meta option → 定点保存，不 editor
-        pure (applyMeta g editMeta)
+      then pure (applyMeta g editMeta)
       else
         if editFetch
           then do
-            -- --fetch → 拉取后进 editor（--apply 跳过 editor）
             results <- liftIO $ fetchFromVndb (VndbName g.title)
             case pickResult editOrder results of
               Nothing -> throwR "no VNDB results found"
@@ -282,15 +249,11 @@ handle Edit {editCoreId, editFetch, editApply, editOrder, editKeepName, editMeta
                 if editApply
                   then pure fetched
                   else openEditor fetched
-          else
-            -- 默认：editor 预填当前数据
-            openEditor g
+          else openEditor g
 
   liftIO $ do
     DB.updateGame conn (finalGame {updateDate = ts})
     ok $ bold_ (pretty finalGame.title) <+> dim_ "updated."
-
--- ── rm ───────────────────────────────────────────────────
 
 handle Remove {removeCoreId, removeHard} = do
   conn <- askConn
@@ -304,8 +267,6 @@ handle Remove {removeCoreId, removeHard} = do
         bold_ (pretty g.title)
           <+> dim_ "removed."
           <> if removeHard then dim_ " (TODO: cloud remove)" else mempty
-
--- ── run ──────────────────────────────────────────────────
 
 handle Run {runTarget, runRandom, runRecent, runLast} = do
   conn <- askConn
@@ -364,8 +325,6 @@ handle Run {runTarget, runRandom, runRecent, runLast} = do
             <> line
             <> dim_ (pretty lp.programFile)
 
--- ── fetch ─────────────────────────────────────────────────
-
 handle Fetch {fetchName, fetchOrder} = do
   results <- liftIO $ fetchFromVndb (VndbName fetchName)
   when (null results) $ throwR "no results found"
@@ -380,9 +339,7 @@ handle Fetch {fetchName, fetchOrder} = do
               <> T.pack (show n)
               <> ", got "
               <> T.pack (show (length results))
-              <> " results" 
-
--- ── list ──────────────────────────────────────────────────
+              <> " results"
 
 handle List {listSort, listReverse, listFilter = _, listDetail} = do
   conn <- askConn
@@ -400,13 +357,10 @@ handle List {listSort, listReverse, listFilter = _, listDetail} = do
           <> other
           <> "  valid: title|lastPlay|createDate|releaseDate|rating"
   let ordered = if listReverse then reverse sorted else sorted
-  -- TODO: apply listFilter DSL
   liftIO $
     if listDetail
       then forM_ ordered printGame
       else printGames ordered
-
--- ── stat ──────────────────────────────────────────────────
 
 handle Stats {statsCoreIds, statsFilter = _} = do
   conn <- askConn
@@ -416,11 +370,8 @@ handle Stats {statsCoreIds, statsFilter = _} = do
         if null statsCoreIds
           then all'
           else filter (\g -> g.game.coreId.unGameId `elem` statsCoreIds) all'
-  -- TODO: apply statsFilter DSL
   when (null targets) $ throwR "no matching games"
   liftIO $ forM_ targets printGame
-
--- ── timeline ─────────────────────────────────────────────
 
 handle Timeline {tlCoreIds, tlFilter = _} = do
   conn <- askConn
@@ -430,7 +381,6 @@ handle Timeline {tlCoreIds, tlFilter = _} = do
         if null tlCoreIds
           then all'
           else filter (\g -> g.coreId.unGameId `elem` tlCoreIds) all'
-  -- TODO: apply tlFilter DSL
   when (null targets) $ throwR "no matching games"
   liftIO $ forM_ targets $ \g ->
     render $
@@ -450,8 +400,6 @@ handle Timeline {tlCoreIds, tlFilter = _} = do
         <+> dim_ "|"
         <+> fmtSeconds tl.duration
 
--- ── use ───────────────────────────────────────────────────
-
 handle Use {useCoreId, useExePath, useSavePath, useGuide} = do
   conn <- askConn
   _ <- requireGame useCoreId
@@ -466,8 +414,6 @@ handle Use {useCoreId, useExePath, useSavePath, useGuide} = do
         }
     ok $ dim_ "exe →" <+> pretty useExePath
 
--- ── info ──────────────────────────────────────────────────
-
 handle Info {infoCoreId} = do
   conn <- askConn
   liftIO $ Session.reconcileSessions conn
@@ -475,8 +421,6 @@ handle Info {infoCoreId} = do
   case mgwl of
     Nothing -> throwR ("game not found: " <> infoCoreId)
     Just gwl -> liftIO $ printGame gwl
-
--- ── status ────────────────────────────────────────────────
 
 handle Status = do
   conn <- askConn
@@ -493,13 +437,8 @@ handle Status = do
           <+> fmtSeconds s.activeSeconds
           <+> dim_ ("pid " <> pretty s.fooPid)
 
--- ── sync ──────────────────────────────────────────────────
-
 handle Sync =
-  -- TODO：读 config 取 gh token，序列化 DB 数据，push 到 gh repo
   throwR "sync not yet implemented"
--- ── config ────────────────────────────────────────────────
 
 handle Config {} =
-  -- TODO：定义 AppConfig 类型，load/save config 文件，按 key 更新
   throwR "config not yet implemented"

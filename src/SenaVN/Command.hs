@@ -11,10 +11,6 @@ import Data.Maybe (isJust)
 import Data.Text (Text)
 import Options.Applicative
 
--- ────────────────────────────────────────────
--- 共享元信息选项（Add / Edit 共用）
--- ────────────────────────────────────────────
-
 data MetaOptions = MetaOptions
   { metaVndbId :: !(Maybe Text),
     metaDeveloper :: !(Maybe Text),
@@ -28,7 +24,6 @@ data MetaOptions = MetaOptions
 emptyMeta :: MetaOptions
 emptyMeta = MetaOptions Nothing Nothing Nothing Nothing Nothing []
 
--- 只要提供了任意 meta option，就走直接保存路径
 hasMeta :: MetaOptions -> Bool
 hasMeta m =
   isJust m.metaVndbId
@@ -38,99 +33,64 @@ hasMeta m =
     || isJust m.metaDescription
     || not (null m.metaTags)
 
--- ────────────────────────────────────────────
--- Command
--- ────────────────────────────────────────────
-
 data Command
-  = -- | 新增游戏
-    --
-    -- 行为优先级：
-    --   hasMeta                   → 直接保存（不 fetch，不 editor）
-    --   --no-fetch                → 跳过 fetch，进 editor
-    --   --no-fetch --skip         → 纯参数保存（脚本友好）
-    --   默认                      → fetch + editor
-    --   --skip                    → fetch 后直接保存，不 editor
-    Add
+  = Add
       { addName :: !Text,
-        addCoreId :: !Text, -- 唯一短 ID，如 "ever17"
+        addCoreId :: !Text,
         addPath :: !(Maybe Text),
         addNoFetch :: !Bool,
-        addSkip :: !Bool, -- 跳过 editor
-        addOrder :: !Int, -- 使用第几条 VNDB 结果（默认 1）
-        addKeepName :: !Bool, -- fetch 后保留手动输入的名字
+        addSkip :: !Bool,
+        addOrder :: !Int,
+        addKeepName :: !Bool,
         addMeta :: !MetaOptions
       }
-  | -- | 编辑游戏元信息
-    --
-    -- 行为优先级：
-    --   hasMeta                   → 直接定点保存（不 editor）
-    --   --fetch                   → fetch 填充后进 editor
-    --   --fetch --apply           → fetch 填充后直接保存
-    --   默认                      → editor（预填当前数据）
-    Edit
+  | Edit
       { editCoreId :: !Text,
         editFetch :: !Bool,
-        editApply :: !Bool, -- 配合 --fetch，跳过 editor
+        editApply :: !Bool,
         editOrder :: !Int,
         editKeepName :: !Bool,
         editMeta :: !MetaOptions
       }
-  | -- | 删除游戏
-    Remove
+  | Remove
       { removeCoreId :: !Text,
-        removeHard :: !Bool -- 同时清除云端
+        removeHard :: !Bool
       }
-  | -- | 启动游戏（调 foo.exe）
-    --
-    -- runTarget / --random / --recent / --last 四选一
-    Run
-      { runTarget :: !(Maybe Text), -- game coreId
+  | Run
+      { runTarget :: !(Maybe Text),
         runRandom :: !Bool,
-        runRecent :: !Bool, -- 最近游玩
-        runLast :: !Bool -- 最近添加
+        runRecent :: !Bool,
+        runLast :: !Bool
       }
-  | -- | 搜索 VNDB（纯展示，不修改本地数据）
-    --
-    --   --order 0   → 展示全部结果（默认）
-    --   --order N   → 展示第 N 条详情
-    Fetch
+  | Fetch
       { fetchName :: !Text,
         fetchOrder :: !Int
       }
-  | -- | 列出游戏库
-    List
+  | List
       { listSort :: !Text,
         listReverse :: !Bool,
         listFilter :: !Text,
         listDetail :: !Bool
       }
-  | -- | 游玩统计（空 = 全部）
-    Stats
+  | Stats
       { statsCoreIds :: ![Text],
         statsFilter :: !Text
       }
-  | -- | 游玩时间线（空 = 全部）
-    Timeline
+  | Timeline
       { tlCoreIds :: ![Text],
         tlFilter :: !Text
       }
-  | -- | 设置/更新本地路径
-    Use
+  | Use
       { useCoreId :: !Text,
         useExePath :: !Text,
         useSavePath :: !(Maybe Text),
         useGuide :: !(Maybe Text)
       }
   | Info {infoCoreId :: !Text}
-  | Status -- 正在运行的游戏（读 session 文件）
+  | Status
   | Sync
   | Config {configKey :: !Text, configValue :: !Text}
   deriving (Show)
-
--- ────────────────────────────────────────────
--- Parsers
--- ────────────────────────────────────────────
 
 metaParser :: Parser MetaOptions
 metaParser =
