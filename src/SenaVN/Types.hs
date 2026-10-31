@@ -54,7 +54,8 @@ data LocalPath = LocalPath
 
 data GameWithLocal = GameWithLocal
   { game :: !GameCore,
-    local :: !(Maybe LocalPath)
+    local :: !(Maybe LocalPath),
+    running :: !(Maybe Int)
   }
   deriving (Show, Eq, Generic, FromJSON, ToJSON)
 

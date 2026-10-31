@@ -3,13 +3,13 @@
 module SenaVN.Handler (handle) where
 
 import Control.Applicative ((<|>))
-import Control.Monad (forM_, when)
+import Control.Monad (forM, forM_, when)
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson (eitherDecode)
 import Data.Aeson.Encode.Pretty (encodePretty)
 import qualified Data.ByteString.Lazy as BL
 import Data.List (sortOn, uncons)
-import Data.Maybe (fromMaybe, isJust)
+import Data.Maybe (catMaybes, fromMaybe, isJust, listToMaybe)
 import Data.Ord (Down (..))
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -199,6 +199,21 @@ askConfirmation prompt = do
        in pure (trimmed == "y" || trimmed == "yes")
     Nothing -> pure False
 
+attachRunningSessions :: [GameWithLocal] -> IO [GameWithLocal]
+attachRunningSessions games = do
+  sessions <- Session.listSessions
+  liveSessions <- fmap catMaybes $ forM sessions $ \s -> do
+    alive <- Session.isPidAlive s.fooPid
+    pure $ if alive then Just (s.gameId, s.activeSeconds) else Nothing
+  pure $
+    map
+      ( \gwl ->
+          case lookup gwl.game.coreId.unGameId liveSessions of
+            Just activeSec -> gwl {running = Just activeSec}
+            Nothing -> gwl
+      )
+      games
+
 handle :: Command -> Romi ()
 handle Add {addName, addCoreId, addPath, addNoFetch, addSkip, addOrder, addKeepName, addMeta} = do
   conn <- askConn
@@ -344,18 +359,20 @@ handle Fetch {fetchName, fetchOrder} = do
 handle List {listSort, listReverse, listFilter = _, listDetail} = do
   conn <- askConn
   liftIO $ Session.reconcileSessions conn
-  games <- liftIO $ DB.getAllGamesWithLocal conn
+  rawGames <- liftIO $ DB.getAllGamesWithLocal conn
+  games <- liftIO $ attachRunningSessions rawGames
   sorted <- case listSort of
     "title" -> pure $ sortOn (\g -> g.game.title) games
     "lastPlay" -> pure $ sortOn (\g -> g.game.lastPlay) games
     "createDate" -> pure $ sortOn (\g -> g.game.createDate) games
     "releaseDate" -> pure $ sortOn (\g -> g.game.releaseDate) games
     "rating" -> pure $ sortOn (\g -> g.game.rating) games
+    "played" -> pure $ sortOn effectivePlayed games
     other ->
       throwR $
         "unknown sort field: "
           <> other
-          <> "  valid: title|lastPlay|createDate|releaseDate|rating"
+          <> "  valid: title|lastPlay|createDate|releaseDate|rating|played"
   let ordered = if listReverse then reverse sorted else sorted
   liftIO $
     if listDetail
@@ -365,13 +382,14 @@ handle List {listSort, listReverse, listFilter = _, listDetail} = do
 handle Stats {statsCoreIds, statsFilter = _} = do
   conn <- askConn
   liftIO $ Session.reconcileSessions conn
-  all' <- liftIO $ DB.getAllGamesWithLocal conn
-  let targets =
-        if null statsCoreIds
-          then all'
-          else filter (\g -> g.game.coreId.unGameId `elem` statsCoreIds) all'
-  when (null targets) $ throwR "no matching games"
-  liftIO $ forM_ targets printGame
+  rawGames <- liftIO $ DB.getAllGamesWithLocal conn
+  allGames <- liftIO $ attachRunningSessions rawGames
+  if null statsCoreIds
+    then liftIO $ printLibraryStats allGames
+    else do
+      let targets = filter (\g -> g.game.coreId.unGameId `elem` statsCoreIds) allGames
+      when (null targets) $ throwR "no matching games found"
+      liftIO $ forM_ targets printGameStat
 
 handle Timeline {tlCoreIds, tlFilter = _} = do
   conn <- askConn
@@ -417,7 +435,11 @@ handle Use {useCoreId, useExePath, useSavePath, useGuide} = do
 handle Info {infoCoreId} = do
   conn <- askConn
   liftIO $ Session.reconcileSessions conn
-  mgwl <- liftIO $ DB.getGameWithLocal conn infoCoreId
+  mgwl <- liftIO $ do
+    mg <- DB.getGameWithLocal conn infoCoreId
+    case mg of
+      Nothing -> pure Nothing
+      Just gwl -> listToMaybe <$> attachRunningSessions [gwl]
   case mgwl of
     Nothing -> throwR ("game not found: " <> infoCoreId)
     Just gwl -> liftIO $ printGame gwl

@@ -11,6 +11,8 @@ module SenaVN.Session
   )
 where
 
+import Control.Concurrent (threadDelay)
+import Control.Exception (IOException, try)
 import Control.Monad (forM, forM_, unless, when)
 import Data.Aeson (FromJSON, ToJSON, eitherDecodeFileStrict, encodeFile)
 import Data.Maybe (catMaybes)
@@ -56,6 +58,16 @@ getSessionsDir = do
 sessionFile :: FilePath -> Text -> FilePath
 sessionFile dir gid = dir </> T.unpack gid <> ".session.json"
 
+readSafe :: FilePath -> Int -> IO (Maybe SessionData)
+readSafe _ 0 = pure Nothing
+readSafe p retries = do
+  res <- try (eitherDecodeFileStrict p) :: IO (Either IOException (Either String SessionData))
+  case res of
+    Right (Right sd) -> pure (Just sd)
+    _ -> do
+      threadDelay 30000
+      readSafe p (retries - 1)
+
 readSession :: Text -> IO (Maybe SessionData)
 readSession gid = do
   dir <- getSessionsDir
@@ -63,9 +75,7 @@ readSession gid = do
   exists <- doesFileExist path
   if not exists
     then pure Nothing
-    else do
-      result <- eitherDecodeFileStrict path
-      pure $ either (const Nothing) Just result
+    else readSafe path 3
 
 writeSession :: SessionData -> IO ()
 writeSession sd = do
@@ -93,9 +103,8 @@ listSessions = do
                 && not (".tmp" `isSuffixOf` f)
           )
           files
-  fmap catMaybes $ forM jsonFiles $ \f -> do
-    result <- eitherDecodeFileStrict (dir </> f)
-    pure $ either (const Nothing) Just result
+  fmap catMaybes $ forM jsonFiles $ \f ->
+    readSafe (dir </> f) 3
   where
     isSuffixOf suf s = drop (length s - length suf) s == suf
 

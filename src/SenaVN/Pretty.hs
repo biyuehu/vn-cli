@@ -7,10 +7,15 @@ module SenaVN.Pretty
     prettyGames,
     prettyFetchResult,
     prettyFetchResults,
+    prettyLibraryStats,
+    prettyGameStat,
     printGame,
     printGames,
     printFetchResult,
     printFetchResults,
+    printLibraryStats,
+    printGameStat,
+    effectivePlayed,
     bold_,
     cyan_,
     green_,
@@ -20,6 +25,7 @@ module SenaVN.Pretty
     fmtDate,
     fmtMinutes,
     fmtSeconds,
+    fmtSecStr,
     fmtHours,
     totalPlayed,
     ratingDoc,
@@ -29,10 +35,13 @@ module SenaVN.Pretty
     tagsList,
     linksList,
     statusDot,
+    progressBar,
   )
 where
 
-import Data.List (intercalate)
+import Data.List (intercalate, sortOn)
+import Data.Maybe (fromMaybe, isJust)
+import Data.Ord (Down (..))
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Time (defaultTimeLocale, formatTime)
@@ -75,13 +84,16 @@ fmtMinutes m =
       mn = m `mod` 60
    in pretty $ if h > 0 then show h <> "h " <> show mn <> "m" else show mn <> "m"
 
-fmtSeconds :: Seconds -> Doc AnsiStyle
-fmtSeconds 0 = dim_ "—"
-fmtSeconds s =
+fmtSecStr :: Seconds -> String
+fmtSecStr 0 = "0m"
+fmtSecStr s =
   let h = s `div` 3600
       m = (s `mod` 3600) `div` 60
-   in green_ . pretty $
-        if h > 0 then show h <> "h " <> show m <> "m" else show m <> "m"
+   in if h > 0 then show h <> "h " <> show m <> "m" else show m <> "m"
+
+fmtSeconds :: Seconds -> Doc AnsiStyle
+fmtSeconds 0 = dim_ "—"
+fmtSeconds s = green_ . pretty $ fmtSecStr s
 
 fmtHours :: Double -> Doc AnsiStyle
 fmtHours 0 = dim_ "—"
@@ -93,12 +105,18 @@ fmtHours d =
 totalPlayed :: [PlayTimeline] -> Seconds
 totalPlayed = sum . map (.duration)
 
+effectivePlayed :: GameWithLocal -> Seconds
+effectivePlayed gwl =
+  totalPlayed gwl.game.playTimelines + fromMaybe 0 gwl.running
+
 ratingDoc :: Double -> Doc AnsiStyle
 ratingDoc 0 = dim_ "not rated"
 ratingDoc r =
-  let filled = round r :: Int
+  let norm = if r > 10 then r / 10 else r
+      filled = min 10 (max 0 (round norm :: Int))
       stars = replicate filled '★' <> replicate (10 - filled) '☆'
-   in yellow_ (pretty stars) <+> dim_ (pretty (show (round r :: Int) <> "/10"))
+      scoreStr = if r > 10 then show (round r :: Int) <> "/100" else show (round r :: Int) <> "/10"
+   in yellow_ (pretty stars) <+> dim_ (pretty scoreStr)
 
 truncated :: Int -> Text -> Doc AnsiStyle
 truncated n t
@@ -127,6 +145,28 @@ linksList ls =
         map (\l -> cyan_ (pretty l.name) <> dim_ (pretty (" " <> l.url))) ls
     ]
 
+progressBar :: Int -> Seconds -> Minutes -> Doc AnsiStyle
+progressBar barWidth playedSec expectedMin
+  | expectedMin <= 0 = dim_ "       —        "
+  | otherwise =
+      let expectedSec = expectedMin * 60
+          pct = (playedSec * 100) `div` expectedSec
+          clampedPct = min 100 (max 0 pct)
+          filled = min barWidth (round ((fromIntegral (clampedPct * barWidth) / 100.0) :: Double) :: Int)
+          empty = barWidth - filled
+          bar = replicate filled '█' <> replicate empty '░'
+          pctStr = show pct <> "%"
+          pctPadded = replicate (max 0 (4 - length pctStr)) ' ' <> pctStr
+       in if pct >= 100
+            then green_ (pretty bar) <+> green_ (pretty pctPadded)
+            else cyan_ (pretty bar) <+> dim_ (pretty pctPadded)
+
+statusDot :: GameWithLocal -> Doc AnsiStyle
+statusDot gwl
+  | isJust gwl.running = annotate (color Green <> bold) "●"
+  | null gwl.game.playTimelines = dim_ "○"
+  | otherwise = green_ "●"
+
 prettyGameDetail :: GameWithLocal -> Doc AnsiStyle
 prettyGameDetail gwl =
   vsep $
@@ -135,6 +175,7 @@ prettyGameDetail gwl =
         <+> dim_ (pretty ("#" <> gwl.game.coreId.unGameId)),
       aliasLine,
       rule,
+      kv w "status" statusLine,
       kv w "vndb" vndbLine,
       kv w "developer" (pretty gwl.game.developer),
       kv w "release" (fmtDate gwl.game.releaseDate),
@@ -143,9 +184,10 @@ prettyGameDetail gwl =
       emptyDoc,
       kv w "rating" (ratingDoc gwl.game.rating),
       kv w "expected" (fmtMinutes gwl.game.expectedPlayTime),
-      kv w "played" (fmtSeconds played),
-      kv w "last play" (fmtDate gwl.game.lastPlay),
-      kv w "sessions" (pretty (length gwl.game.playTimelines)),
+      kv w "played" playedLine,
+      kv w "progress" (progressBar 16 played gwl.game.expectedPlayTime),
+      kv w "last play" lastPlayLine,
+      kv w "sessions" (pretty (length gwl.game.playTimelines + maybe 0 (const 1) gwl.running)),
       emptyDoc,
       kv w "tags" (tagsList gwl.game.tags)
     ]
@@ -156,7 +198,13 @@ prettyGameDetail gwl =
       <> [rule]
   where
     w = 10
-    played = totalPlayed gwl.game.playTimelines
+    played = effectivePlayed gwl
+
+    statusLine = case gwl.running of
+      Just liveSec -> annotate (color Green <> bold) "● running" <+> dim_ ("(session: " <> pretty (fmtSecStr liveSec) <> ")")
+      Nothing
+        | null gwl.game.playTimelines -> dim_ "○ unplayed"
+        | otherwise -> green_ "● in library"
 
     aliasLine
       | null gwl.game.alias = emptyDoc
@@ -167,6 +215,15 @@ prettyGameDetail gwl =
     vndbLine = case gwl.game.vndbId of
       Nothing -> dim_ "—"
       Just vid -> cyan_ (pretty vid)
+
+    playedLine = case gwl.running of
+      Just liveSec ->
+        fmtSeconds played <+> annotate (color Green <> bold) (pretty ("(+" <> fmtSecStr liveSec <> " now)"))
+      Nothing -> fmtSeconds played
+
+    lastPlayLine = case gwl.running of
+      Just _ -> annotate (color Green <> bold) "now"
+      Nothing -> fmtDate gwl.game.lastPlay
 
     descSection
       | T.null gwl.game.description = []
@@ -211,21 +268,23 @@ prettyGameDetail gwl =
       | null gwl.game.links = []
       | otherwise = [linksList gwl.game.links]
 
-statusDot :: GameWithLocal -> Doc AnsiStyle
-statusDot gwl
-  | null gwl.game.playTimelines = dim_ "○"
-  | gwl.game.lastPlay > 0 = green_ "●"
-  | otherwise = yellow_ "◐"
-
 prettyGameRow :: GameWithLocal -> Doc AnsiStyle
 prettyGameRow gwl =
   statusDot gwl
-    <+> fill 30 (bold_ (truncated 28 gwl.game.title))
+    <+> fill 26 (bold_ (truncated 24 gwl.game.title))
     <+> fill 14 (dim_ (truncated 12 gwl.game.developer))
-    <+> fill 10 (fmtSeconds (totalPlayed gwl.game.playTimelines))
-    <+> fill 12 (fmtDate gwl.game.lastPlay)
+    <+> fill 10 playedDoc
+    <+> fill 16 (progressBar 8 played gwl.game.expectedPlayTime)
+    <+> fill 12 lastPlayDoc
     <+> ratingCol
   where
+    played = effectivePlayed gwl
+    playedDoc = case gwl.running of
+      Just _ -> annotate (color Green <> bold) (pretty (fmtSecStr played))
+      Nothing -> fmtSeconds played
+    lastPlayDoc = case gwl.running of
+      Just _ -> annotate (color Green <> bold) "now"
+      Nothing -> fmtDate gwl.game.lastPlay
     ratingCol
       | gwl.game.rating == 0 = dim_ "—"
       | otherwise = yellow_ . pretty $ show (round gwl.game.rating :: Int)
@@ -234,9 +293,10 @@ listHeader :: Doc AnsiStyle
 listHeader =
   dim_ $
     pretty ("  " :: Text)
-      <> fill 30 "title"
+      <> fill 26 "title"
       <> fill 14 "developer"
       <> fill 10 "played"
+      <> fill 16 "progress"
       <> fill 12 "last play"
       <> "rating"
 
@@ -300,6 +360,112 @@ prettyFetchResults fs =
     <> line
     <> dim_ (pretty ("  " <> show (length fs) <> " result(s)  ·  use --order N for details"))
 
+data LibraryStats = LibraryStats
+  { totalGames :: !Int,
+    configuredGames :: !Int,
+    playedGames :: !Int,
+    unplayedGames :: !Int,
+    totalPlaytime :: !Seconds,
+    totalSessions :: !Int,
+    avgSessionSec :: !Seconds,
+    topPlayed :: ![(GameWithLocal, Seconds)]
+  }
+
+computeStats :: [GameWithLocal] -> LibraryStats
+computeStats games =
+  let tot = length games
+      configured = length $ filter (isJust . (.local)) games
+      withPlay = filter (\g -> effectivePlayed g > 0) games
+      playedCount = length withPlay
+      unplayedCount = tot - playedCount
+      totalSec = sum (map effectivePlayed games)
+      allSessions = concatMap (\g -> g.game.playTimelines) games
+      totSessions = length allSessions + length (filter (isJust . (.running)) games)
+      avgSec = if totSessions > 0 then totalSec `div` totSessions else 0
+      top5 = take 5 . sortOn (Down . snd) $ map (\g -> (g, effectivePlayed g)) withPlay
+   in LibraryStats
+        { totalGames = tot,
+          configuredGames = configured,
+          playedGames = playedCount,
+          unplayedGames = unplayedCount,
+          totalPlaytime = totalSec,
+          totalSessions = totSessions,
+          avgSessionSec = avgSec,
+          topPlayed = top5
+        }
+
+prettyLibraryStats :: [GameWithLocal] -> Doc AnsiStyle
+prettyLibraryStats games =
+  let s = computeStats games
+      w = 16
+      showPct n tot' =
+        if tot' > 0 then show ((n * 100) `div` tot') <> "%" else "0%"
+      topSection
+        | null s.topPlayed = emptyDoc
+        | otherwise =
+            let maxSec = maximum (map snd s.topPlayed)
+                barLen sec = if maxSec > 0 then (sec * 20) `div` maxSec else 0
+                row (idx, (gwl, sec)) =
+                  dim_ ("  " <> pretty (show idx <> ". "))
+                    <> fill 26 (bold_ (truncated 24 gwl.game.title))
+                    <+> fill 10 (fmtSeconds sec)
+                    <+> cyan_ (pretty (replicate (barLen sec) '█' <> replicate (20 - barLen sec) '░'))
+             in vsep
+                  ( [ emptyDoc,
+                      dim_ "  Top Played Games"
+                    ]
+                      <> map row (zip [1 :: Int ..] s.topPlayed)
+                  )
+   in vsep
+        [ rule,
+          bold_ (white_ "SenaVN Library Statistics"),
+          rule,
+          kv w "total games" (pretty s.totalGames),
+          kv w "configured" (pretty s.configuredGames <+> dim_ ("(" <> pretty (showPct s.configuredGames s.totalGames) <> ")")),
+          kv w "played" (green_ (pretty s.playedGames) <+> dim_ ("(" <> pretty (showPct s.playedGames s.totalGames) <> ")")),
+          kv w "unplayed" (dim_ (pretty s.unplayedGames) <+> dim_ ("(" <> pretty (showPct s.unplayedGames s.totalGames) <> ")")),
+          emptyDoc,
+          kv w "total playtime" (fmtSeconds s.totalPlaytime),
+          kv w "sessions" (pretty s.totalSessions),
+          kv w "avg session" (fmtSeconds s.avgSessionSec),
+          topSection,
+          rule
+        ]
+
+prettyGameStat :: GameWithLocal -> Doc AnsiStyle
+prettyGameStat gwl =
+  vsep
+    [ rule,
+      bold_ (white_ (pretty gwl.game.title)) <+> dim_ (pretty ("#" <> gwl.game.coreId.unGameId)),
+      rule,
+      kv w "developer" (pretty gwl.game.developer),
+      kv w "rating" (ratingDoc gwl.game.rating),
+      kv w "expected" (fmtMinutes gwl.game.expectedPlayTime),
+      kv w "played" playedDoc,
+      kv w "progress" (progressBar 16 played gwl.game.expectedPlayTime),
+      emptyDoc,
+      kv w "sessions" (pretty totalSessCount),
+      kv w "avg session" (fmtSeconds avgSess),
+      kv w "longest" (fmtSeconds longestSess),
+      kv w "first play" (fmtDate firstPlay),
+      kv w "last play" lastPlayDoc,
+      rule
+    ]
+  where
+    w = 14
+    played = effectivePlayed gwl
+    playedDoc = case gwl.running of
+      Just liveSec -> fmtSeconds played <+> green_ (pretty ("(+" <> fmtSecStr liveSec <> " now)"))
+      Nothing -> fmtSeconds played
+    lastPlayDoc = case gwl.running of
+      Just _ -> green_ "now"
+      Nothing -> fmtDate gwl.game.lastPlay
+    timelines = gwl.game.playTimelines
+    totalSessCount = length timelines + maybe 0 (const 1) gwl.running
+    longestSess = if null timelines then 0 else maximum (map (.duration) timelines)
+    avgSess = if totalSessCount > 0 then played `div` totalSessCount else 0
+    firstPlay = if null timelines then 0 else minimum (map (.start) timelines)
+
 render :: Doc AnsiStyle -> IO ()
 render = renderIO stdout . layoutPretty defaultLayoutOptions
 
@@ -314,3 +480,9 @@ printFetchResult idx = render . prettyFetchResult idx
 
 printFetchResults :: [FetchGameData] -> IO ()
 printFetchResults = render . prettyFetchResults
+
+printLibraryStats :: [GameWithLocal] -> IO ()
+printLibraryStats = render . prettyLibraryStats
+
+printGameStat :: GameWithLocal -> IO ()
+printGameStat = render . prettyGameStat

@@ -3,8 +3,9 @@ use winapi::um::winuser::{GetForegroundWindow, GetWindowThreadProcessId};
 
 pub fn is_pid_alive(pid: u32) -> bool {
   let mut sys = System::new();
-  sys.refresh_processes(ProcessesToUpdate::All, true);
-  sys.process(Pid::from_u32(pid)).is_some()
+  let target = Pid::from_u32(pid);
+  sys.refresh_processes(ProcessesToUpdate::Some(&[target]), true);
+  sys.process(target).is_some()
 }
 
 pub fn is_window_active(pid: u32) -> bool {

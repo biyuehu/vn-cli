@@ -199,7 +199,7 @@ getGameWithLocal conn gid = do
     Nothing -> pure Nothing
     Just g -> do
       ml <- getLocalPath conn gid
-      pure $ Just GameWithLocal {game = g, local = ml}
+      pure $ Just GameWithLocal {game = g, local = ml, running = Nothing}
 
 getAllGames :: Connection -> IO [GameCore]
 getAllGames conn = do
@@ -211,7 +211,7 @@ getAllGamesWithLocal conn = do
   games <- getAllGames conn
   forM games $ \g -> do
     ml <- getLocalPath conn g.coreId.unGameId
-    pure GameWithLocal {game = g, local = ml}
+    pure GameWithLocal {game = g, local = ml, running = Nothing}
 
 insertGame :: Connection -> GameCore -> IO ()
 insertGame conn g = withTransaction conn $ do
