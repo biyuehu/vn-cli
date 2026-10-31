@@ -1,3 +1,5 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module SenaVN.Command
   ( Command (..),
     MetaOptions (..),
@@ -7,9 +9,33 @@ module SenaVN.Command
   )
 where
 
+import Control.Exception (SomeException, catch)
 import Data.Maybe (isJust)
 import Data.Text (Text)
+import qualified Data.Text as T
+import Database.SQLite.Simple (Only (..), close, open, query_)
 import Options.Applicative
+import System.Directory (doesFileExist, getHomeDirectory)
+import System.FilePath ((</>))
+
+gameIdCompleter :: Completer
+gameIdCompleter = listIOCompleter fetchGameIds
+
+fetchGameIds :: IO [String]
+fetchGameIds =
+  ( do
+      home <- getHomeDirectory
+      let dbPath = home </> ".senavn" </> "sena.db"
+      exists <- doesFileExist dbPath
+      if not exists
+        then pure []
+        else do
+          conn <- open dbPath
+          ids <- query_ conn "SELECT id FROM games ORDER BY id" :: IO [Only Text]
+          close conn
+          pure (map (T.unpack . fromOnly) ids)
+  )
+    `catch` \(_ :: SomeException) -> pure []
 
 data MetaOptions = MetaOptions
   { metaVndbId :: !(Maybe Text),
@@ -58,6 +84,7 @@ data Command
       }
   | Run
       { runTarget :: !(Maybe Text),
+        runSkip :: !Bool,
         runRandom :: !Bool,
         runRecent :: !Bool,
         runLast :: !Bool
@@ -90,6 +117,7 @@ data Command
   | Status
   | Sync
   | Config {configKey :: !Text, configValue :: !Text}
+  | Completion {completionShell :: !Text}
   deriving (Show)
 
 metaParser :: Parser MetaOptions
@@ -149,20 +177,22 @@ metaParser =
 commandParser :: Parser Command
 commandParser =
   subparser $
-    command "add" (info addParser (progDesc "Add a game to library"))
-      <> command "edit" (info editParser (progDesc "Edit game metadata"))
-      <> command "rm" (info rmParser (progDesc "Remove a game"))
-      <> command "run" (info runParser (progDesc "Launch a game"))
-      <> command "fetch" (info fetchParser (progDesc "Search VNDB"))
-      <> command "list" (info listParser (progDesc "List library"))
-      <> command "stat" (info statParser (progDesc "Play statistics"))
-      <> command "tl" (info tlParser (progDesc "Play timeline"))
-      <> command "use" (info useParser (progDesc "Set game executable"))
-      <> command "info" (info infoParser' (progDesc "Show game details"))
-      <> command "status" (info statusParser (progDesc "Show running games"))
-      <> command "sync" (info syncParser (progDesc "Sync to GitHub"))
-      <> command "config" (info cfgParser (progDesc "Set config value"))
+    sub "add" addParser "Add a game to library"
+      <> sub "edit" editParser "Edit game metadata"
+      <> sub "rm" rmParser "Remove a game"
+      <> sub "run" runParser "Launch a game"
+      <> sub "fetch" fetchParser "Search VNDB"
+      <> sub "list" listParser "List library"
+      <> sub "stat" statParser "Play statistics"
+      <> sub "tl" tlParser "Play timeline"
+      <> sub "use" useParser "Set game executable"
+      <> sub "info" infoParser' "Show game details"
+      <> sub "status" statusParser "Show running games"
+      <> sub "sync" syncParser "Sync to GitHub"
+      <> sub "config" cfgParser "Set config value"
+      <> sub "completion" completionParser "Generate shell completion script"
   where
+    sub cmd p desc = command cmd (info (p <**> helper) (progDesc desc))
     addParser =
       Add
         <$> argument
@@ -209,7 +239,7 @@ commandParser =
 
     editParser =
       Edit
-        <$> argument str (metavar "ID" <> help "Game ID to edit")
+        <$> argument str (metavar "ID" <> help "Game ID to edit" <> completer gameIdCompleter)
         <*> switch
           ( long "fetch"
               <> short 'f'
@@ -237,15 +267,16 @@ commandParser =
 
     rmParser =
       Remove
-        <$> argument str (metavar "ID" <> help "Game ID to remove")
+        <$> argument str (metavar "ID" <> help "Game ID to remove" <> completer gameIdCompleter)
         <*> switch (long "hard" <> short 'H' <> help "Also remove from cloud")
 
     runParser =
       Run
-        <$> optional (argument str (metavar "ID" <> help "Game ID to run"))
-        <*> switch (long "random" <> short 'r' <> help "Random game")
-        <*> switch (long "recent" <> short 'c' <> help "Most recently played")
-        <*> switch (long "last" <> short 'l' <> help "Most recently added")
+        <$> optional (argument str (metavar "ID_OR_NAME" <> help "Game ID or title query" <> completer gameIdCompleter))
+        <*> switch (long "skip" <> short 's' <> help "Exact ID match only, skip fuzzy search")
+        <*> switch (long "random" <> help "Random game")
+        <*> switch (long "recent" <> short 'R' <> help "Most recently played")
+        <*> switch (long "last" <> short 'L' <> help "Most recently added")
 
     fetchParser =
       Fetch
@@ -282,7 +313,7 @@ commandParser =
 
     statParser =
       Stats
-        <$> many (argument str (metavar "ID..." <> help "Game IDs (empty = all)"))
+        <$> many (argument str (metavar "ID..." <> help "Game IDs (empty = all)" <> completer gameIdCompleter))
         <*> option
           str
           ( long "filter"
@@ -294,7 +325,7 @@ commandParser =
 
     tlParser =
       Timeline
-        <$> many (argument str (metavar "ID..." <> help "Game IDs (empty = all)"))
+        <$> many (argument str (metavar "ID..." <> help "Game IDs (empty = all)" <> completer gameIdCompleter))
         <*> option
           str
           ( long "filter"
@@ -306,7 +337,7 @@ commandParser =
 
     useParser =
       Use
-        <$> argument str (metavar "ID" <> help "Game ID")
+        <$> argument str (metavar "ID" <> help "Game ID" <> completer gameIdCompleter)
         <*> argument str (metavar "PATH" <> help "Executable path")
         <*> optional
           ( option
@@ -325,10 +356,13 @@ commandParser =
               )
           )
 
-    infoParser' = Info <$> argument str (metavar "ID" <> help "Game ID")
+    infoParser' = Info <$> argument str (metavar "ID" <> help "Game ID" <> completer gameIdCompleter)
     statusParser = pure Status
     syncParser = pure Sync
     cfgParser =
       Config
         <$> argument str (metavar "KEY")
         <*> argument str (metavar "VALUE")
+    completionParser =
+      Completion
+        <$> argument str (metavar "SHELL" <> help "bash|zsh|fish")

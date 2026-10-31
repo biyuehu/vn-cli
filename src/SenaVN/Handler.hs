@@ -27,8 +27,9 @@ import SenaVN.Utils (randomOne)
 import System.Console.Haskeline (defaultSettings, getInputLine, runInputT)
 import System.Directory (findExecutable)
 import System.Environment (lookupEnv)
+import System.Exit (exitFailure)
 import System.FilePath ((</>))
-import System.IO (hClose, stdout)
+import System.IO (hClose, hFlush, stdout)
 import System.IO.Temp (withSystemTempFile)
 import System.Process (CreateProcess (..), StdStream (..), callProcess, createProcess, proc)
 
@@ -199,6 +200,63 @@ askConfirmation prompt = do
        in pure (trimmed == "y" || trimmed == "yes")
     Nothing -> pure False
 
+selectFetchInteractive :: Text -> [FetchGameData] -> IO FetchGameData
+selectFetchInteractive _ [] = fail "Empty results"
+selectFetchInteractive query (firstResult : rest) = do
+  let results = firstResult : rest
+  putStrLn $ "Multiple VNDB results found for '" <> T.unpack query <> "':"
+  let displayResults = take 6 results
+  forM_ (zip [1 :: Int ..] displayResults) $ \(idx, fd) -> do
+    let vid = T.unpack fd.vndbId
+        titleStr = T.unpack fd.title
+        devStr = if T.null fd.developer then "" else " | " <> T.unpack fd.developer
+        ratingStr = if fd.rating > 0 then " | ★" <> show (round (fd.rating * 10) :: Int) else ""
+    putStrLn $ "  [" <> show idx <> "] " <> titleStr <> " (" <> vid <> devStr <> ratingStr <> ")"
+  askLoop (length displayResults)
+  where
+    askLoop maxIdx = do
+      putStr $ "Select result [1-" <> show maxIdx <> ", default 1, q to cancel]: "
+      hFlush stdout
+      input <- getLine
+      let trimmed = filter (/= ' ') input
+      case trimmed of
+        "" -> pure firstResult
+        "1" -> pure firstResult
+        "q" -> exitFailure
+        "Q" -> exitFailure
+        s -> case reads s of
+          [(idx, "")] | idx >= 1 && idx <= maxIdx ->
+            pure ((firstResult : rest) !! (idx - 1))
+          _ -> do
+            putStrLn "Invalid selection. Please enter a valid number or 'q' to cancel."
+            askLoop maxIdx
+
+selectGameInteractive :: Text -> [GameWithLocal] -> IO GameCore
+selectGameInteractive query matches = do
+  putStrLn $ "Multiple configured games matched '" <> T.unpack query <> "':"
+  let displayMatches = take 8 matches
+  forM_ (zip [1 :: Int ..] displayMatches) $ \(idx, gwl) -> do
+    let titleStr = T.unpack gwl.game.title
+        idStr = "#" <> T.unpack gwl.game.coreId.unGameId
+        exeStr = maybe "" (T.unpack . (.programFile)) gwl.local
+    putStrLn $ "  [" <> show idx <> "] " <> titleStr <> " (" <> idStr <> ") -> " <> exeStr
+  askLoop (length displayMatches)
+  where
+    askLoop maxIdx = do
+      putStr $ "Select game to run [1-" <> show maxIdx <> ", or q to cancel]: "
+      hFlush stdout
+      input <- getLine
+      let trimmed = filter (/= ' ') input
+      case trimmed of
+        "q" -> exitFailure
+        "Q" -> exitFailure
+        s -> case reads s of
+          [(idx, "")] | idx >= 1 && idx <= maxIdx ->
+            pure (matches !! (idx - 1)).game
+          _ -> do
+            putStrLn "Invalid selection. Please enter a valid number or 'q' to cancel."
+            askLoop maxIdx
+
 attachRunningSessions :: [GameWithLocal] -> IO [GameWithLocal]
 attachRunningSessions games = do
   sessions <- Session.listSessions
@@ -233,13 +291,19 @@ handle Add {addName, addCoreId, addPath, addNoFetch, addSkip, addOrder, addKeepN
               else openEditor base
           else do
             results <- liftIO $ fetchFromVndb (VndbName addName)
-            case pickResult addOrder results of
-              Nothing -> throwR "no VNDB results found"
-              Just fd -> do
-                let fetched = applyFetch addKeepName base fd
-                if addSkip
-                  then pure fetched
-                  else openEditor fetched
+            when (null results) $ throwR "no VNDB results found"
+            selected <-
+              if addOrder /= 1 || addSkip
+                then case pickResult addOrder results of
+                  Nothing -> throwR "no VNDB results found"
+                  Just fd -> pure fd
+                else case results of
+                  [single] -> pure single
+                  _ -> liftIO $ selectFetchInteractive addName results
+            let fetched = applyFetch addKeepName base selected
+            if addSkip
+              then pure fetched
+              else openEditor fetched
 
   liftIO $ DB.insertGame conn finalGame
   setupLocal addCoreId addPath
@@ -257,13 +321,19 @@ handle Edit {editCoreId, editFetch, editApply, editOrder, editKeepName, editMeta
         if editFetch
           then do
             results <- liftIO $ fetchFromVndb (VndbName g.title)
-            case pickResult editOrder results of
-              Nothing -> throwR "no VNDB results found"
-              Just fd -> do
-                let fetched = applyFetch editKeepName g fd
-                if editApply
-                  then pure fetched
-                  else openEditor fetched
+            when (null results) $ throwR "no VNDB results found"
+            selected <-
+              if editOrder /= 1 || editApply
+                then case pickResult editOrder results of
+                  Nothing -> throwR "no VNDB results found"
+                  Just fd -> pure fd
+                else case results of
+                  [single] -> pure single
+                  _ -> liftIO $ selectFetchInteractive g.title results
+            let fetched = applyFetch editKeepName g selected
+            if editApply
+              then pure fetched
+              else openEditor fetched
           else openEditor g
 
   liftIO $ do
@@ -283,11 +353,11 @@ handle Remove {removeCoreId, removeHard} = do
           <+> dim_ "removed."
           <> if removeHard then dim_ " (TODO: cloud remove)" else mempty
 
-handle Run {runTarget, runRandom, runRecent, runLast} = do
+handle Run {runTarget, runSkip, runRandom, runRecent, runLast} = do
   conn <- askConn
   let activeFlags = length $ filter Prelude.id [isJust runTarget, runRandom, runRecent, runLast]
   when (activeFlags > 1) $
-    throwR "only one of <id> / --random / --recent / --last can be specified"
+    throwR "only one of <id|name> / --random / --recent / --last can be specified"
 
   liftIO $ Session.reconcileSessions conn
 
@@ -295,7 +365,6 @@ handle Run {runTarget, runRandom, runRecent, runLast} = do
   when (null games) $ throwR "library is empty"
 
   g <- case runTarget of
-    Just gid -> requireGame gid
     Nothing
       | runRandom ->
           liftIO (randomOne games) >>= maybe (throwR "no games available") pure
@@ -308,15 +377,42 @@ handle Run {runTarget, runRandom, runRecent, runLast} = do
             [] -> throwR "library is empty"
             (x : _) -> pure x
       | otherwise ->
-          throwR "specify a game ID or use --random / --recent / --last"
+          throwR "specify a game ID/name or use --random / --recent / --last"
+
+    Just target -> do
+      mExact <- liftIO $ DB.getGame conn target
+      case mExact of
+        Just exactGame -> pure exactGame
+        Nothing ->
+          if runSkip
+            then throwR ("game not found with exact ID: " <> target)
+            else do
+              allWithLocal <- liftIO $ DB.getAllGamesWithLocal conn
+              let configured = filter (isJust . (.local)) allWithLocal
+                  targetLower = T.toLower target
+                  matches =
+                    filter
+                      ( \gwl ->
+                          targetLower `T.isInfixOf` T.toLower gwl.game.title
+                            || any (\a -> targetLower `T.isInfixOf` T.toLower a) gwl.game.alias
+                      )
+                      configured
+              case matches of
+                [] ->
+                  throwR $
+                    "no configured game found matching '"
+                      <> target
+                      <> "'. Check with 'sena list' or configure with 'sena use <id> <exe>'."
+                [single] -> pure single.game
+                multiple -> liftIO $ selectGameInteractive target multiple
 
   mLocal <- liftIO $ DB.getLocalPath conn g.coreId.unGameId
   case mLocal of
     Nothing ->
       throwR $
-        "no exe set for "
+        "no exe configured for "
           <> g.title
-          <> " — run: sena use "
+          <> " — configure first with: sena use "
           <> g.coreId.unGameId
           <> " <path>"
     Just lp -> do
@@ -328,7 +424,9 @@ handle Run {runTarget, runRandom, runRecent, runLast} = do
             throwR $
               "game is already running: "
                 <> g.title
-                <> " (PID: "
+                <> " (#"
+                <> g.coreId.unGameId
+                <> ", PID: "
                 <> T.pack (show sess.fooPid)
                 <> ")"
         Nothing -> pure ()
@@ -337,8 +435,9 @@ handle Run {runTarget, runRandom, runRecent, runLast} = do
         printLn $
           annotate (color Green) "▶"
             <+> bold_ (pretty g.title)
+            <+> dim_ (pretty ("(#" <> g.coreId.unGameId <> ")"))
             <> line
-            <> dim_ (pretty lp.programFile)
+            <> dim_ ("  " <> pretty lp.programFile)
 
 handle Fetch {fetchName, fetchOrder} = do
   results <- liftIO $ fetchFromVndb (VndbName fetchName)
@@ -464,3 +563,10 @@ handle Sync =
 
 handle Config {} =
   throwR "config not yet implemented"
+
+handle Completion {completionShell} = liftIO $ do
+  case T.toLower completionShell of
+    "bash" -> putStrLn "eval \"$(sena --bash-completion-script sena)\""
+    "zsh" -> putStrLn "eval \"$(sena --zsh-completion-script sena)\""
+    "fish" -> putStrLn "sena --fish-completion-script sena | source"
+    _ -> putStrLn "Usage: eval \"$(sena --bash-completion-script sena)\" (supported: bash, zsh, fish)"
