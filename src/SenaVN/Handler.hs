@@ -3,11 +3,12 @@
 module SenaVN.Handler (handle) where
 
 import Control.Applicative ((<|>))
-import Control.Monad (forM, forM_, when)
+import Control.Monad (forM, forM_, unless, when)
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson (eitherDecode)
 import Data.Aeson.Encode.Pretty (encodePretty)
 import qualified Data.ByteString.Lazy as BL
+import Data.Char (isAlphaNum)
 import Data.List (sortOn, uncons)
 import Data.Maybe (catMaybes, fromMaybe, isJust, listToMaybe)
 import Data.Ord (Down (..))
@@ -352,6 +353,31 @@ handle Remove {removeCoreId, removeHard} = do
         bold_ (pretty g.title)
           <+> dim_ "removed."
           <> if removeHard then dim_ " (TODO: cloud remove)" else mempty
+
+handle Move {moveOldId, moveNewId} = do
+  conn <- askConn
+  when (moveOldId == moveNewId) $
+    throwR "new ID must be different from old ID"
+  when (T.null (T.strip moveNewId)) $
+    throwR "new ID cannot be empty"
+  unless (T.all (\c -> isAlphaNum c || c == '-' || c == '_') moveNewId) $
+    throwR "new ID must contain only letters, numbers, hyphens, or underscores"
+  g <- requireGame moveOldId
+  existingNew <- liftIO $ DB.getGame conn moveNewId
+  when (isJust existingNew) $
+    throwR ("game already exists with ID: " <> moveNewId)
+  mRunning <- liftIO $ Session.readSession moveOldId
+  case mRunning of
+    Just sess -> do
+      alive <- liftIO $ Session.isPidAlive sess.fooPid
+      when alive $
+        throwR ("cannot rename game while it is running (PID: " <> T.pack (show sess.fooPid) <> ")")
+    Nothing -> pure ()
+  liftIO $ Session.reconcileSessions conn
+  ts <- liftIO now
+  liftIO $ DB.renameGame conn moveOldId moveNewId ts
+  liftIO $ Session.renameSession moveOldId moveNewId
+  liftIO $ ok $ bold_ (pretty g.title) <+> dim_ ("renamed: #" <> pretty moveOldId <> " → #" <> pretty moveNewId)
 
 handle Run {runTarget, runSkip, runRandom, runRecent, runLast} = do
   conn <- askConn

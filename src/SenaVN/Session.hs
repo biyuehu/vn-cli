@@ -4,6 +4,7 @@ module SenaVN.Session
     readSession,
     writeSession,
     deleteSession,
+    renameSession,
     listSessions,
     isPidAlive,
     reconcileSessions,
@@ -91,6 +92,20 @@ deleteSession gid = do
   let path = sessionFile dir gid
   exists <- doesFileExist path
   when exists $ removeFile path
+
+renameSession :: Text -> Text -> IO ()
+renameSession oldId newId = do
+  dir <- getSessionsDir
+  let oldPath = sessionFile dir oldId
+      newPath = sessionFile dir newId
+  exists <- doesFileExist oldPath
+  when exists $ do
+    mSess <- readSafe oldPath 3
+    case mSess of
+      Just sess -> do
+        writeSession sess {gameId = newId}
+        removeFile oldPath
+      Nothing -> renameFile oldPath newPath
 
 listSessions :: IO [SessionData]
 listSessions = do

@@ -82,6 +82,10 @@ data Command
       { removeCoreId :: !Text,
         removeHard :: !Bool
       }
+  | Move
+      { moveOldId :: !Text,
+        moveNewId :: !Text
+      }
   | Run
       { runTarget :: !(Maybe Text),
         runSkip :: !Bool,
@@ -180,6 +184,7 @@ commandParser =
     sub "add" addParser "Add a game to library"
       <> sub "edit" editParser "Edit game metadata"
       <> sub "rm" rmParser "Remove a game"
+      <> sub "mv" mvParser "Rename a game ID"
       <> sub "run" runParser "Launch a game"
       <> sub "fetch" fetchParser "Search VNDB"
       <> sub "list" listParser "List library"
@@ -269,6 +274,11 @@ commandParser =
       Remove
         <$> argument str (metavar "ID" <> help "Game ID to remove" <> completer gameIdCompleter)
         <*> switch (long "hard" <> short 'H' <> help "Also remove from cloud")
+
+    mvParser =
+      Move
+        <$> argument str (metavar "OLD_ID" <> help "Current game ID to rename" <> completer gameIdCompleter)
+        <*> argument str (metavar "NEW_ID" <> help "New game ID")
 
     runParser =
       Run

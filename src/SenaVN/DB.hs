@@ -18,6 +18,7 @@ module SenaVN.DB
     upsertPlaySession,
     getPlaySessions,
     updateLastPlay,
+    renameGame,
   )
 where
 
@@ -326,3 +327,13 @@ updateLastPlay conn gid ts =
     conn
     "UPDATE games SET last_play=? WHERE id=? AND last_play<?"
     (ts, gid, ts)
+
+renameGame :: Connection -> Text -> Text -> Int -> IO ()
+renameGame conn oldId newId ts = withTransaction conn $ do
+  execute_ conn "PRAGMA defer_foreign_keys = ON"
+  execute conn "UPDATE games SET id=?, update_date=? WHERE id=?" (newId, ts, oldId)
+  execute conn "UPDATE local_paths SET game_id=? WHERE game_id=?" (newId, oldId)
+  execute
+    conn
+    "UPDATE play_sessions SET id=? || '-' || start_time, game_id=? WHERE game_id=?"
+    (newId, newId, oldId)
