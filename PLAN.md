@@ -97,7 +97,7 @@ edit `<id>`：
 - [x] foo：用 `Instant` 累加真实高精度间隔代替 `active_time += 1`，只刷新目标 pid；记录进程启动时间做 PID 复用防护。
 - [x] Schema 精简：去掉附属表（aliases/tags/images/links），收拢为 games 表内的 array 字段。
 - DB：`PRAGMA busy_timeout`；`PRAGMA user_version` 迁移机制（同步阶段要加墓碑表）。
-- 非 TTY 输出（管道/重定向）用 `hSupportsANSI` 判断，退化为 `unAnnotate`。
+- [x] 非 TTY 输出（管道/重定向）用 `hSupportsANSI` 判断，退化为 `unAnnotate`；动态适配终端宽度。
 
 ### P2（功能）
 

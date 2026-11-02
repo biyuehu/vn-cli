@@ -183,9 +183,6 @@ spawnFoo gameId gameName exePath = do
         }
   pure ()
 
-render :: Doc AnsiStyle -> IO ()
-render = renderIO stdout . layoutPretty defaultLayoutOptions
-
 printLn :: Doc AnsiStyle -> IO ()
 printLn d = render (d <> line)
 
@@ -528,24 +525,18 @@ handle Timeline {tlCoreIds, tlFilter = _} = do
   liftIO $ forM_ targets $ \g ->
     render $
       vsep
-        [ bold_ (pretty g.title)
-            <+> dim_ (pretty (T.pack (show (length g.playTimelines)) <> " sessions")),
-          indent 2 $ vsep (map tlRow g.playTimelines),
+        [ bold_ (white_ (pretty g.title))
+            <+> dim_ (pretty ("(#" <> g.coreId.unGameId <> ")"))
+            <+> dim_ ("· " <> pretty (show (length g.playTimelines) <> " session(s)")),
+          if null g.playTimelines
+            then indent 2 (dim_ "no recorded play sessions.")
+            else indent 2 $ vsep (map fmtTimeline (reverse g.playTimelines)),
           emptyDoc
         ]
-  where
-    tlRow :: PlayTimeline -> Doc AnsiStyle
-    tlRow tl =
-      dim_ "·"
-        <+> fmtDate tl.start
-        <+> dim_ "→"
-        <+> fmtDate tl.end
-        <+> dim_ "|"
-        <+> fmtSeconds tl.duration
 
 handle Use {useCoreId, useExePath, useSavePath, useGuide} = do
   conn <- askConn
-  _ <- requireGame useCoreId
+  g <- requireGame useCoreId
   liftIO $ do
     DB.upsertLocalPath
       conn
@@ -555,7 +546,7 @@ handle Use {useCoreId, useExePath, useSavePath, useGuide} = do
           savePath = useSavePath,
           guideFile = useGuide
         }
-    ok $ dim_ "exe →" <+> pretty useExePath
+    ok $ bold_ (pretty g.title) <+> dim_ (pretty ("(#" <> useCoreId <> ") exe →")) <+> pretty useExePath
 
 handle Info {infoCoreId} = do
   conn <- askConn
@@ -577,12 +568,16 @@ handle Status = do
     then liftIO $ printLn (dim_ "no games running.")
     else liftIO $ forM_ sessions $ \s -> do
       alive <- Session.isPidAlive s.fooPid
+      mGame <- DB.getGame conn s.gameId
+      let titleDoc = case mGame of
+            Just g -> bold_ (white_ (pretty g.title)) <+> dim_ (pretty ("(#" <> s.gameId <> ")"))
+            Nothing -> bold_ (pretty s.gameId)
       printLn $
-        (if alive then annotate (color Green) "●" else annotate (color Yellow) "?")
-          <+> bold_ (pretty s.gameId)
-          <+> dim_ "|"
-          <+> fmtSeconds s.activeSeconds
-          <+> dim_ ("pid " <> pretty s.fooPid)
+        (if alive then annotate (color Green <> bold) "▶" else annotate (color Yellow) "?")
+          <+> titleDoc
+          <+> dim_ "·"
+          <+> green_ (pretty (fmtSecStr s.activeSeconds))
+          <+> dim_ ("(PID " <> pretty s.fooPid <> ")")
 
 handle Sync =
   throwR "sync not yet implemented"

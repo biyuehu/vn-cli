@@ -1,20 +1,32 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module SenaVN.Pretty
   ( prettyGameDetail,
+    prettyGameDetailW,
     prettyGameRow,
     prettyGames,
+    prettyGamesW,
     prettyFetchResult,
+    prettyFetchResultW,
     prettyFetchResults,
+    prettyFetchResultsW,
     prettyLibraryStats,
+    prettyLibraryStatsW,
     prettyGameStat,
+    prettyGameStatW,
     printGame,
     printGames,
     printFetchResult,
     printFetchResults,
     printLibraryStats,
     printGameStat,
+    render,
+    renderDoc,
+    getTermWidth,
+    calcColumns,
+    ListColumns (..),
     effectivePlayed,
     bold_,
     cyan_,
@@ -27,10 +39,12 @@ module SenaVN.Pretty
     fmtSeconds,
     fmtSecStr,
     fmtHours,
+    fmtTimeline,
     totalPlayed,
     ratingDoc,
     truncated,
     rule,
+    ruleW,
     kv,
     tagsList,
     linksList,
@@ -39,6 +53,7 @@ module SenaVN.Pretty
   )
 where
 
+import Control.Exception (SomeException, catch)
 import Data.List (intercalate, sortOn)
 import Data.Maybe (fromMaybe, isJust)
 import Data.Ord (Down (..))
@@ -50,7 +65,10 @@ import GHC.Records (HasField)
 import Prettyprinter
 import Prettyprinter.Render.Terminal
 import SenaVN.Types
+import qualified System.Console.ANSI as ANSI
+import System.Environment (lookupEnv)
 import System.IO (stdout)
+import Text.Read (readMaybe)
 
 bold_ :: Doc AnsiStyle -> Doc AnsiStyle
 bold_ = annotate bold
@@ -102,6 +120,23 @@ fmtHours d =
       mn = round ((d - fromIntegral h) * 60) :: Int
    in pretty $ if h > 0 then show h <> "h " <> show mn <> "m" else show mn <> "m"
 
+fmtTimeline :: PlayTimeline -> Doc AnsiStyle
+fmtTimeline tl
+  | tl.start == 0 = dim_ "·" <+> fmtSeconds tl.duration
+  | otherwise =
+      let startUtc = posixSecondsToUTCTime (fromIntegral tl.start)
+          endTs = if tl.end > 0 then tl.end else tl.start + tl.duration
+          endUtc = posixSecondsToUTCTime (fromIntegral endTs)
+          startDate = formatTime defaultTimeLocale "%Y-%m-%d" startUtc
+          endDate = formatTime defaultTimeLocale "%Y-%m-%d" endUtc
+          startTime = formatTime defaultTimeLocale "%H:%M" startUtc
+          endTime = formatTime defaultTimeLocale "%H:%M" endUtc
+          timeRange =
+            if startDate == endDate
+              then pretty (startDate <> " " <> startTime <> " → " <> endTime)
+              else pretty (startDate <> " " <> startTime <> " → " <> endDate <> " " <> endTime)
+       in dim_ "·" <+> timeRange <+> dim_ "·" <+> fmtSeconds tl.duration
+
 totalPlayed :: [PlayTimeline] -> Seconds
 totalPlayed = sum . map (.duration)
 
@@ -124,7 +159,10 @@ truncated n t
   | otherwise = pretty (T.take (n - 1) t <> "…")
 
 rule :: Doc AnsiStyle
-rule = dim_ (pretty (replicate 75 '─'))
+rule = ruleW 88
+
+ruleW :: Int -> Doc AnsiStyle
+ruleW w = dim_ (pretty (replicate (max 20 w) '─'))
 
 kv :: Int -> Text -> Doc AnsiStyle -> Doc AnsiStyle
 kv w k v =
@@ -163,47 +201,139 @@ progressBar barWidth playedSec expectedMin
 
 statusDot :: GameWithLocal -> Doc AnsiStyle
 statusDot gwl
-  | isJust gwl.running = annotate (color Green <> bold) "●"
+  | isJust gwl.running = annotate (color Green <> bold) "▶"
   | null gwl.game.playTimelines = dim_ "○"
+  | effectivePlayed gwl >= fromIntegral (gwl.game.expectedPlayTime * 60) && gwl.game.expectedPlayTime > 0 =
+      annotate (color Cyan) "✔"
   | otherwise = green_ "●"
 
-prettyGameDetail :: GameWithLocal -> Doc AnsiStyle
-prettyGameDetail gwl =
+data ListColumns = ListColumns
+  { colTitle :: !Int,
+    colDev :: !Int,
+    colPlayed :: !Int,
+    colProgress :: !Int,
+    colLastPlay :: !Int,
+    colRating :: !Int
+  }
+  deriving (Show)
+
+calcColumns :: Int -> ListColumns
+calcColumns w =
+  let fixedW = 51
+      dynamicW = max 26 (w - fixedW)
+      devW = max 10 (min 22 (dynamicW `div` 3))
+      titleW = dynamicW - devW
+   in ListColumns
+        { colTitle = titleW,
+          colDev = devW,
+          colPlayed = 10,
+          colProgress = 16,
+          colLastPlay = 12,
+          colRating = 7
+        }
+
+prettyGameRow :: ListColumns -> GameWithLocal -> Doc AnsiStyle
+prettyGameRow cols gwl =
+  statusDot gwl
+    <+> fill cols.colTitle (bold_ (truncated cols.colTitle gwl.game.title))
+    <+> fill cols.colDev (dim_ (truncated cols.colDev gwl.game.developer))
+    <+> fill cols.colPlayed playedDoc
+    <+> fill cols.colProgress (progressBar 8 played gwl.game.expectedPlayTime)
+    <+> fill cols.colLastPlay lastPlayDoc
+    <+> ratingCol
+  where
+    played = effectivePlayed gwl
+    playedDoc = case gwl.running of
+      Just _ -> annotate (color Green <> bold) (pretty (fmtSecStr played))
+      Nothing -> fmtSeconds played
+    lastPlayDoc = case gwl.running of
+      Just _ -> annotate (color Green <> bold) "now"
+      Nothing -> fmtDate gwl.game.lastPlay
+    ratingCol
+      | gwl.game.rating <= 0 = dim_ "—"
+      | otherwise =
+          let score = if gwl.game.rating > 10 then gwl.game.rating / 10 else gwl.game.rating
+              intPart = floor score :: Int
+              decPart = round ((score - fromIntegral intPart) * 10) :: Int
+              scoreStr = if decPart == 0 then show intPart else show intPart <> "." <> show decPart
+           in yellow_ ("★ " <> pretty scoreStr)
+
+listHeader :: ListColumns -> Doc AnsiStyle
+listHeader cols =
+  dim_ $
+    pretty ("  " :: Text)
+      <> fill cols.colTitle "title"
+      <+> fill cols.colDev "developer"
+      <+> fill cols.colPlayed "played"
+      <+> fill cols.colProgress "progress"
+      <+> fill cols.colLastPlay "last play"
+      <+> "rating"
+
+prettyGames :: [GameWithLocal] -> Doc AnsiStyle
+prettyGames = prettyGamesW 88
+
+prettyGamesW :: Int -> [GameWithLocal] -> Doc AnsiStyle
+prettyGamesW _ [] = dim_ "  no games in library."
+prettyGamesW w gs =
   vsep $
-    [ rule,
+    [ listHeader cols,
+      ruleW w
+    ]
+      <> map (prettyGameRow cols) gs
+      <> [ ruleW w,
+           footer
+         ]
+  where
+    cols = calcColumns w
+    tot = length gs
+    totalSec = sum (map effectivePlayed gs)
+    runningCount = length (filter (isJust . (.running)) gs)
+    runDoc = if runningCount > 0 then dim_ "  ·  " <> green_ (pretty (show runningCount <> " running")) else emptyDoc
+    playDoc = if totalSec > 0 then dim_ "  ·  " <> pretty (fmtSecStr totalSec) <+> dim_ "played" else emptyDoc
+    footer = dim_ ("  " <> pretty (show tot <> " game(s)")) <> playDoc <> runDoc
+
+prettyGameDetail :: GameWithLocal -> Doc AnsiStyle
+prettyGameDetail = prettyGameDetailW 88
+
+prettyGameDetailW :: Int -> GameWithLocal -> Doc AnsiStyle
+prettyGameDetailW w gwl =
+  vsep $
+    [ ruleW w,
       bold_ (white_ (pretty gwl.game.title))
         <+> dim_ (pretty ("#" <> gwl.game.coreId.unGameId)),
       aliasLine,
-      rule,
-      kv w "status" statusLine,
-      kv w "vndb" vndbLine,
-      kv w "developer" (pretty gwl.game.developer),
-      kv w "release" (fmtDate gwl.game.releaseDate),
-      kv w "added" (fmtDate gwl.game.createDate),
-      kv w "updated" (fmtDate gwl.game.updateDate),
+      ruleW w,
+      kv kw "status" statusLine,
+      kv kw "vndb" vndbLine,
+      kv kw "developer" (pretty gwl.game.developer),
+      kv kw "release" (fmtDate gwl.game.releaseDate),
+      kv kw "added" (fmtDate gwl.game.createDate),
+      kv kw "updated" (fmtDate gwl.game.updateDate),
       emptyDoc,
-      kv w "rating" (ratingDoc gwl.game.rating),
-      kv w "expected" (fmtMinutes gwl.game.expectedPlayTime),
-      kv w "played" playedLine,
-      kv w "progress" (progressBar 16 played gwl.game.expectedPlayTime),
-      kv w "last play" lastPlayLine,
-      kv w "sessions" (pretty (length gwl.game.playTimelines + maybe 0 (const 1) gwl.running)),
+      kv kw "rating" (ratingDoc gwl.game.rating),
+      kv kw "expected" (fmtMinutes gwl.game.expectedPlayTime),
+      kv kw "played" playedLine,
+      kv kw "progress" (progressBar 16 played gwl.game.expectedPlayTime),
+      kv kw "last play" lastPlayLine,
+      kv kw "sessions" (pretty (length gwl.game.playTimelines + maybe 0 (const 1) gwl.running)),
       emptyDoc,
-      kv w "tags" (tagsList gwl.game.tags)
+      kv kw "tags" (tagsList gwl.game.tags)
     ]
       <> descSection
       <> sessionSection
       <> localSection
       <> linksSection
-      <> [rule]
+      <> [ruleW w]
   where
-    w = 10
+    kw = 10
     played = effectivePlayed gwl
 
     statusLine = case gwl.running of
-      Just liveSec -> annotate (color Green <> bold) "● running" <+> dim_ ("(session: " <> pretty (fmtSecStr liveSec) <> ")")
+      Just liveSec -> annotate (color Green <> bold) "▶ running" <+> dim_ ("(session: " <> pretty (fmtSecStr liveSec) <> ")")
       Nothing
         | null gwl.game.playTimelines -> dim_ "○ unplayed"
+        | played >= fromIntegral (gwl.game.expectedPlayTime * 60) && gwl.game.expectedPlayTime > 0 ->
+            cyan_ "✔ finished"
         | otherwise -> green_ "● in library"
 
     aliasLine
@@ -230,7 +360,7 @@ prettyGameDetail gwl =
       | otherwise =
           [ emptyDoc,
             dim_ "  description",
-            indent 4 (truncated 240 gwl.game.description)
+            indent 4 (truncated (max 60 (w - 8)) gwl.game.description)
           ]
 
     sessionSection :: [Doc AnsiStyle]
@@ -240,21 +370,15 @@ prettyGameDetail gwl =
           [ emptyDoc,
             dim_ "  recent sessions"
           ]
-            <> map timelineRow (take 5 . reverse $ gwl.game.playTimelines)
-
-    timelineRow :: PlayTimeline -> Doc AnsiStyle
-    timelineRow tl =
-      indent 4 $
-        dim_ "·"
-          <+> fmtDate tl.start
-          <+> dim_ "→"
-          <+> fmtDate tl.end
-          <+> dim_ "|"
-          <+> fmtSeconds tl.duration
+            <> map (indent 4 . fmtTimeline) (take 5 . reverse $ gwl.game.playTimelines)
 
     localSection :: [Doc AnsiStyle]
     localSection = case gwl.local of
-      Nothing -> []
+      Nothing ->
+        [ emptyDoc,
+          dim_ "  local",
+          indent 4 (dim_ "not configured  (set with: sena use " <> pretty gwl.game.coreId.unGameId <> " <path>)")
+        ]
       Just lp ->
         [ emptyDoc,
           dim_ "  local",
@@ -268,71 +392,30 @@ prettyGameDetail gwl =
       | null gwl.game.links = []
       | otherwise = [linksList gwl.game.links]
 
-prettyGameRow :: GameWithLocal -> Doc AnsiStyle
-prettyGameRow gwl =
-  statusDot gwl
-    <+> fill 26 (bold_ (truncated 24 gwl.game.title))
-    <+> fill 14 (dim_ (truncated 12 gwl.game.developer))
-    <+> fill 10 playedDoc
-    <+> fill 16 (progressBar 8 played gwl.game.expectedPlayTime)
-    <+> fill 12 lastPlayDoc
-    <+> ratingCol
-  where
-    played = effectivePlayed gwl
-    playedDoc = case gwl.running of
-      Just _ -> annotate (color Green <> bold) (pretty (fmtSecStr played))
-      Nothing -> fmtSeconds played
-    lastPlayDoc = case gwl.running of
-      Just _ -> annotate (color Green <> bold) "now"
-      Nothing -> fmtDate gwl.game.lastPlay
-    ratingCol
-      | gwl.game.rating == 0 = dim_ "—"
-      | otherwise = yellow_ . pretty $ show (round gwl.game.rating :: Int)
-
-listHeader :: Doc AnsiStyle
-listHeader =
-  dim_ $
-    pretty ("  " :: Text)
-      <> fill 26 "title"
-      <> fill 14 "developer"
-      <> fill 10 "played"
-      <> fill 16 "progress"
-      <> fill 12 "last play"
-      <> "rating"
-
-prettyGames :: [GameWithLocal] -> Doc AnsiStyle
-prettyGames [] = dim_ "  no games."
-prettyGames gs =
-  vsep $
-    [ listHeader,
-      rule
-    ]
-      <> map prettyGameRow gs
-      <> [ rule,
-           dim_ (pretty ("  " <> show (length gs) <> " game(s)"))
-         ]
-
 prettyFetchResult :: Int -> FetchGameData -> Doc AnsiStyle
-prettyFetchResult idx f =
+prettyFetchResult = prettyFetchResultW 88
+
+prettyFetchResultW :: Int -> Int -> FetchGameData -> Doc AnsiStyle
+prettyFetchResultW w idx f =
   vsep $
-    [ rule,
+    [ ruleW w,
       dim_ (pretty ("[" <> show idx <> "]  "))
         <> bold_ (white_ (pretty f.title))
         <+> dim_ (pretty f.vndbId),
       aliasLine,
-      rule,
-      kv w "developer" (pretty f.developer),
-      kv w "release" (fmtDate f.releaseDate),
-      kv w "rating" (ratingDoc f.rating),
-      kv w "expected" (fmtHours f.expectedPlayHours),
+      ruleW w,
+      kv kw "developer" (pretty f.developer),
+      kv kw "release" (fmtDate f.releaseDate),
+      kv kw "rating" (ratingDoc f.rating),
+      kv kw "expected" (fmtHours f.expectedPlayHours),
       emptyDoc,
-      kv w "tags" (tagsList f.tags)
+      kv kw "tags" (tagsList f.tags)
     ]
       <> descSection
       <> linksSection
-      <> [rule]
+      <> [ruleW w]
   where
-    w = 10
+    kw = 10
 
     aliasLine
       | null f.alias = emptyDoc
@@ -345,7 +428,7 @@ prettyFetchResult idx f =
       | otherwise =
           [ emptyDoc,
             dim_ "  description",
-            indent 4 (truncated 240 f.description)
+            indent 4 (truncated (max 60 (w - 8)) f.description)
           ]
 
     linksSection :: [Doc AnsiStyle]
@@ -354,9 +437,12 @@ prettyFetchResult idx f =
       | otherwise = [linksList f.links]
 
 prettyFetchResults :: [FetchGameData] -> Doc AnsiStyle
-prettyFetchResults [] = dim_ "  no results."
-prettyFetchResults fs =
-  vsep (zipWith prettyFetchResult [1 ..] fs)
+prettyFetchResults = prettyFetchResultsW 88
+
+prettyFetchResultsW :: Int -> [FetchGameData] -> Doc AnsiStyle
+prettyFetchResultsW _ [] = dim_ "  no results."
+prettyFetchResultsW w fs =
+  vsep (zipWith (prettyFetchResultW w) [1 ..] fs)
     <> line
     <> dim_ (pretty ("  " <> show (length fs) <> " result(s)  ·  use --order N for details"))
 
@@ -395,21 +481,26 @@ computeStats games =
         }
 
 prettyLibraryStats :: [GameWithLocal] -> Doc AnsiStyle
-prettyLibraryStats games =
+prettyLibraryStats = prettyLibraryStatsW 88
+
+prettyLibraryStatsW :: Int -> [GameWithLocal] -> Doc AnsiStyle
+prettyLibraryStatsW w games =
   let s = computeStats games
-      w = 16
+      kw = 16
       showPct n tot' =
         if tot' > 0 then show ((n * 100) `div` tot') <> "%" else "0%"
       topSection
         | null s.topPlayed = emptyDoc
         | otherwise =
             let maxSec = maximum (map snd s.topPlayed)
-                barLen sec = if maxSec > 0 then (sec * 20) `div` maxSec else 0
+                barMax = max 15 (min 35 (w - 55))
+                barLen sec = if maxSec > 0 then (sec * barMax) `div` maxSec else 0
+                titleW = max 20 (min 45 (w - barMax - 25))
                 row (idx, (gwl, sec)) =
                   dim_ ("  " <> pretty (show idx <> ". "))
-                    <> fill 26 (bold_ (truncated 24 gwl.game.title))
+                    <> fill titleW (bold_ (truncated titleW gwl.game.title))
                     <+> fill 10 (fmtSeconds sec)
-                    <+> cyan_ (pretty (replicate (barLen sec) '█' <> replicate (20 - barLen sec) '░'))
+                    <+> cyan_ (pretty (replicate (barLen sec) '█' <> replicate (barMax - barLen sec) '░'))
              in vsep
                   ( [ emptyDoc,
                       dim_ "  Top Played Games"
@@ -417,42 +508,45 @@ prettyLibraryStats games =
                       <> map row (zip [1 :: Int ..] s.topPlayed)
                   )
    in vsep
-        [ rule,
+        [ ruleW w,
           bold_ (white_ "SenaVN Library Statistics"),
-          rule,
-          kv w "total games" (pretty s.totalGames),
-          kv w "configured" (pretty s.configuredGames <+> dim_ ("(" <> pretty (showPct s.configuredGames s.totalGames) <> ")")),
-          kv w "played" (green_ (pretty s.playedGames) <+> dim_ ("(" <> pretty (showPct s.playedGames s.totalGames) <> ")")),
-          kv w "unplayed" (dim_ (pretty s.unplayedGames) <+> dim_ ("(" <> pretty (showPct s.unplayedGames s.totalGames) <> ")")),
+          ruleW w,
+          kv kw "total games" (pretty s.totalGames),
+          kv kw "configured" (pretty s.configuredGames <+> dim_ ("(" <> pretty (showPct s.configuredGames s.totalGames) <> ")")),
+          kv kw "played" (green_ (pretty s.playedGames) <+> dim_ ("(" <> pretty (showPct s.playedGames s.totalGames) <> ")")),
+          kv kw "unplayed" (dim_ (pretty s.unplayedGames) <+> dim_ ("(" <> pretty (showPct s.unplayedGames s.totalGames) <> ")")),
           emptyDoc,
-          kv w "total playtime" (fmtSeconds s.totalPlaytime),
-          kv w "sessions" (pretty s.totalSessions),
-          kv w "avg session" (fmtSeconds s.avgSessionSec),
+          kv kw "total playtime" (fmtSeconds s.totalPlaytime),
+          kv kw "sessions" (pretty s.totalSessions),
+          kv kw "avg session" (fmtSeconds s.avgSessionSec),
           topSection,
-          rule
+          ruleW w
         ]
 
 prettyGameStat :: GameWithLocal -> Doc AnsiStyle
-prettyGameStat gwl =
+prettyGameStat = prettyGameStatW 88
+
+prettyGameStatW :: Int -> GameWithLocal -> Doc AnsiStyle
+prettyGameStatW w gwl =
   vsep
-    [ rule,
+    [ ruleW w,
       bold_ (white_ (pretty gwl.game.title)) <+> dim_ (pretty ("#" <> gwl.game.coreId.unGameId)),
-      rule,
-      kv w "developer" (pretty gwl.game.developer),
-      kv w "rating" (ratingDoc gwl.game.rating),
-      kv w "expected" (fmtMinutes gwl.game.expectedPlayTime),
-      kv w "played" playedDoc,
-      kv w "progress" (progressBar 16 played gwl.game.expectedPlayTime),
+      ruleW w,
+      kv kw "developer" (pretty gwl.game.developer),
+      kv kw "rating" (ratingDoc gwl.game.rating),
+      kv kw "expected" (fmtMinutes gwl.game.expectedPlayTime),
+      kv kw "played" playedDoc,
+      kv kw "progress" (progressBar 16 played gwl.game.expectedPlayTime),
       emptyDoc,
-      kv w "sessions" (pretty totalSessCount),
-      kv w "avg session" (fmtSeconds avgSess),
-      kv w "longest" (fmtSeconds longestSess),
-      kv w "first play" (fmtDate firstPlay),
-      kv w "last play" lastPlayDoc,
-      rule
+      kv kw "sessions" (pretty totalSessCount),
+      kv kw "avg session" (fmtSeconds avgSess),
+      kv kw "longest" (fmtSeconds longestSess),
+      kv kw "first play" (fmtDate firstPlay),
+      kv kw "last play" lastPlayDoc,
+      ruleW w
     ]
   where
-    w = 14
+    kw = 14
     played = effectivePlayed gwl
     playedDoc = case gwl.running of
       Just liveSec -> fmtSeconds played <+> green_ (pretty ("(+" <> fmtSecStr liveSec <> " now)"))
@@ -466,23 +560,57 @@ prettyGameStat gwl =
     avgSess = if totalSessCount > 0 then played `div` totalSessCount else 0
     firstPlay = if null timelines then 0 else minimum (map (.start) timelines)
 
+getTermWidth :: IO Int
+getTermWidth = do
+  mConsoleSize <- (ANSI.getTerminalSize >>= pure) `catch` \(_ :: SomeException) -> pure Nothing
+  mEnvCols <- lookupEnv "COLUMNS"
+  let parsedEnv = mEnvCols >>= readMaybe
+  pure $ case mConsoleSize of
+    Just (_, cols) | cols > 0 -> clamp cols
+    _ -> case parsedEnv of
+      Just cols | cols > 0 -> clamp cols
+      _ -> 88
+  where
+    clamp c = max 60 (min 160 (c - 1))
+
+renderDoc :: Doc AnsiStyle -> IO ()
+renderDoc doc = do
+  w <- getTermWidth
+  supportsAnsi <- ANSI.hSupportsANSI stdout `catch` \(_ :: SomeException) -> pure False
+  let opts = LayoutOptions (AvailablePerLine (max 40 w) 1.0)
+  if supportsAnsi
+    then renderIO stdout (layoutPretty opts doc)
+    else renderIO stdout (layoutPretty opts (unAnnotate doc))
+
 render :: Doc AnsiStyle -> IO ()
-render = renderIO stdout . layoutPretty defaultLayoutOptions
+render = renderDoc
 
 printGame :: GameWithLocal -> IO ()
-printGame = render . prettyGameDetail
+printGame gwl = do
+  w <- getTermWidth
+  renderDoc (prettyGameDetailW w gwl)
 
 printGames :: [GameWithLocal] -> IO ()
-printGames = render . prettyGames
+printGames gs = do
+  w <- getTermWidth
+  renderDoc (prettyGamesW w gs)
 
 printFetchResult :: Int -> FetchGameData -> IO ()
-printFetchResult idx = render . prettyFetchResult idx
+printFetchResult idx fd = do
+  w <- getTermWidth
+  renderDoc (prettyFetchResultW w idx fd)
 
 printFetchResults :: [FetchGameData] -> IO ()
-printFetchResults = render . prettyFetchResults
+printFetchResults fs = do
+  w <- getTermWidth
+  renderDoc (prettyFetchResultsW w fs)
 
 printLibraryStats :: [GameWithLocal] -> IO ()
-printLibraryStats = render . prettyLibraryStats
+printLibraryStats gs = do
+  w <- getTermWidth
+  renderDoc (prettyLibraryStatsW w gs)
 
 printGameStat :: GameWithLocal -> IO ()
-printGameStat = render . prettyGameStat
+printGameStat gwl = do
+  w <- getTermWidth
+  renderDoc (prettyGameStatW w gwl)
