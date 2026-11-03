@@ -1,0 +1,4 @@
+{
+  "haskell.sessionLoading": "singleComponent",
+  "haskell.componentsLoading": "single"
+}

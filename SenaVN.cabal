@@ -30,7 +30,6 @@ common shared-properties
   build-depends:
     aeson,
     aeson-pretty,
-    ansi-terminal,
     base ^>=4.19,
     bytestring,
     directory,

@@ -65,9 +65,8 @@ import GHC.Records (HasField)
 import Prettyprinter
 import Prettyprinter.Render.Terminal
 import SenaVN.Types
-import qualified System.Console.ANSI as ANSI
 import System.Environment (lookupEnv)
-import System.IO (stdout)
+import System.IO (hIsTerminalDevice, stdout)
 import Text.Read (readMaybe)
 
 bold_ :: Doc AnsiStyle -> Doc AnsiStyle
@@ -505,7 +504,7 @@ prettyLibraryStatsW w games =
                   ( [ emptyDoc,
                       dim_ "  Top Played Games"
                     ]
-                      <> map row (zip [1 :: Int ..] s.topPlayed)
+                      <> zipWith (curry row) [1 :: Int ..] s.topPlayed
                   )
    in vsep
         [ ruleW w,
@@ -562,23 +561,20 @@ prettyGameStatW w gwl =
 
 getTermWidth :: IO Int
 getTermWidth = do
-  mConsoleSize <- (ANSI.getTerminalSize >>= pure) `catch` \(_ :: SomeException) -> pure Nothing
   mEnvCols <- lookupEnv "COLUMNS"
   let parsedEnv = mEnvCols >>= readMaybe
-  pure $ case mConsoleSize of
-    Just (_, cols) | cols > 0 -> clamp cols
-    _ -> case parsedEnv of
-      Just cols | cols > 0 -> clamp cols
-      _ -> 88
+  pure $ case parsedEnv of
+    Just cols | cols > 0 -> clamp cols
+    _ -> 88
   where
     clamp c = max 60 (min 160 (c - 1))
 
 renderDoc :: Doc AnsiStyle -> IO ()
 renderDoc doc = do
   w <- getTermWidth
-  supportsAnsi <- ANSI.hSupportsANSI stdout `catch` \(_ :: SomeException) -> pure False
+  isTerm <- hIsTerminalDevice stdout `catch` \(_ :: SomeException) -> pure False
   let opts = LayoutOptions (AvailablePerLine (max 40 w) 1.0)
-  if supportsAnsi
+  if isTerm
     then renderIO stdout (layoutPretty opts doc)
     else renderIO stdout (layoutPretty opts (unAnnotate doc))
 
