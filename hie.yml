@@ -1,0 +1,7 @@
+cradle:
+  cabal:
+    - path: "src"
+      component: "lib:SenaVN"
+    - path: "app"
+      component: "exe:SenaVN"
+

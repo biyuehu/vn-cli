@@ -30,7 +30,7 @@ import System.Directory (findExecutable)
 import System.Environment (lookupEnv)
 import System.Exit (exitFailure)
 import System.FilePath ((</>))
-import System.IO (hClose, hFlush, stdout)
+import System.IO (hClose)
 import System.IO.Temp (withSystemTempFile)
 import System.Process (CreateProcess (..), StdStream (..), callProcess, createProcess, proc)
 
@@ -187,11 +187,16 @@ printLn :: Doc AnsiStyle -> IO ()
 printLn d = render (d <> line)
 
 ok :: Doc AnsiStyle -> IO ()
-ok msg = printLn $ annotate (color Green) "✓" <+> msg
+ok msg = printLn $ annotate (color Green <> bold) "✔" <+> msg
 
-askConfirmation :: Text -> IO Bool
-askConfirmation prompt = do
-  ans <- runInputT defaultSettings (getInputLine (T.unpack prompt))
+askConfirmation :: Doc AnsiStyle -> IO Bool
+askConfirmation promptDoc = do
+  renderInline $
+    annotate (color Yellow <> bold) "?"
+      <+> promptDoc
+      <+> dim_ "[y/N]"
+      <+> annotate (color Cyan <> bold) "› "
+  ans <- runInputT defaultSettings (getInputLine "")
   case ans of
     Just s ->
       let trimmed = T.toLower (T.strip (T.pack s))
@@ -202,19 +207,37 @@ selectFetchInteractive :: Text -> [FetchGameData] -> IO FetchGameData
 selectFetchInteractive _ [] = fail "Empty results"
 selectFetchInteractive query (firstResult : rest) = do
   let results = firstResult : rest
-  putStrLn $ "Multiple VNDB results found for '" <> T.unpack query <> "':"
+  printLn $
+    annotate (color Cyan <> bold) "◆"
+      <+> bold_ "Multiple VNDB results found for"
+      <+> cyan_ (pretty ("'" <> query <> "'")) <> dim_ ":"
   let displayResults = take 6 results
   forM_ (zip [1 :: Int ..] displayResults) $ \(idx, fd) -> do
-    let vid = T.unpack fd.vndbId
-        titleStr = T.unpack fd.title
-        devStr = if T.null fd.developer then "" else " | " <> T.unpack fd.developer
-        ratingStr = if fd.rating > 0 then " | ★" <> show (round (fd.rating * 10) :: Int) else ""
-    putStrLn $ "  [" <> show idx <> "] " <> titleStr <> " (" <> vid <> devStr <> ratingStr <> ")"
+    let vid = fd.vndbId
+        titleDoc = bold_ (white_ (pretty fd.title))
+        devDoc =
+          if T.null fd.developer
+            then mempty
+            else dim_ " · " <> dim_ (pretty fd.developer)
+        ratingDoc' =
+          if fd.rating > 0
+            then space <> yellow_ ("★" <> pretty (show (round (fd.rating * 10) :: Int)))
+            else mempty
+    printLn $
+      indent 2 $
+        annotate (color Cyan <> bold) ("[" <> pretty idx <> "]")
+          <+> titleDoc
+          <+> dim_ ("(" <> pretty vid <> ")")
+          <> devDoc
+          <> ratingDoc'
   askLoop (length displayResults)
   where
     askLoop maxIdx = do
-      putStr $ "Select result [1-" <> show maxIdx <> ", default 1, q to cancel]: "
-      hFlush stdout
+      renderInline $
+        annotate (color Yellow <> bold) "?"
+          <+> bold_ "Select result"
+          <+> dim_ ("[1-" <> pretty maxIdx <> ", default 1, q to cancel]")
+          <+> annotate (color Cyan <> bold) "› "
       input <- getLine
       let trimmed = filter (/= ' ') input
       case trimmed of
@@ -226,23 +249,37 @@ selectFetchInteractive query (firstResult : rest) = do
           [(idx, "")] | idx >= 1 && idx <= maxIdx ->
             pure ((firstResult : rest) !! (idx - 1))
           _ -> do
-            putStrLn "Invalid selection. Please enter a valid number or 'q' to cancel."
+            printLn $
+              annotate (color Red <> bold) "✗"
+                <+> annotate (color Red) "Invalid selection."
+                <+> dim_ ("Please enter 1-" <> pretty maxIdx <> " or 'q' to cancel.")
             askLoop maxIdx
 
 selectGameInteractive :: Text -> [GameWithLocal] -> IO GameCore
 selectGameInteractive query matches = do
-  putStrLn $ "Multiple configured games matched '" <> T.unpack query <> "':"
+  printLn $
+    annotate (color Cyan <> bold) "◆"
+      <+> bold_ "Multiple configured games matched"
+      <+> cyan_ (pretty ("'" <> query <> "'")) <> dim_ ":"
   let displayMatches = take 8 matches
   forM_ (zip [1 :: Int ..] displayMatches) $ \(idx, gwl) -> do
-    let titleStr = T.unpack gwl.game.title
-        idStr = "#" <> T.unpack gwl.game.coreId.unGameId
-        exeStr = maybe "" (T.unpack . (.programFile)) gwl.local
-    putStrLn $ "  [" <> show idx <> "] " <> titleStr <> " (" <> idStr <> ") -> " <> exeStr
+    let titleDoc = bold_ (white_ (pretty gwl.game.title))
+        idDoc = annotate (color Magenta) (pretty ("(#" <> gwl.game.coreId.unGameId <> ")"))
+        exeDoc = maybe mempty (\lp -> dim_ " → " <> dim_ (pretty lp.programFile)) gwl.local
+    printLn $
+      indent 2 $
+        annotate (color Cyan <> bold) ("[" <> pretty idx <> "]")
+          <+> titleDoc
+          <+> idDoc
+          <> exeDoc
   askLoop (length displayMatches)
   where
     askLoop maxIdx = do
-      putStr $ "Select game to run [1-" <> show maxIdx <> ", or q to cancel]: "
-      hFlush stdout
+      renderInline $
+        annotate (color Yellow <> bold) "?"
+          <+> bold_ "Select game to run"
+          <+> dim_ ("[1-" <> pretty maxIdx <> ", q to cancel]")
+          <+> annotate (color Cyan <> bold) "› "
       input <- getLine
       let trimmed = filter (/= ' ') input
       case trimmed of
@@ -252,7 +289,10 @@ selectGameInteractive query matches = do
           [(idx, "")] | idx >= 1 && idx <= maxIdx ->
             pure (matches !! (idx - 1)).game
           _ -> do
-            putStrLn "Invalid selection. Please enter a valid number or 'q' to cancel."
+            printLn $
+              annotate (color Red <> bold) "✗"
+                <+> annotate (color Red) "Invalid selection."
+                <+> dim_ ("Please enter 1-" <> pretty maxIdx <> " or 'q' to cancel.")
             askLoop maxIdx
 
 attachRunningSessions :: [GameWithLocal] -> IO [GameWithLocal]
@@ -305,7 +345,7 @@ handle Add {addName, addCoreId, addPath, addNoFetch, addSkip, addOrder, addKeepN
 
   liftIO $ DB.insertGame conn finalGame
   setupLocal addCoreId addPath
-  liftIO $ ok $ bold_ (pretty finalGame.title) <+> dim_ "added."
+  liftIO $ ok $ bold_ (white_ (pretty finalGame.title)) <+> dim_ "added."
 
 handle Edit {editCoreId, editFetch, editApply, editOrder, editKeepName, editMeta} = do
   conn <- askConn
@@ -336,18 +376,24 @@ handle Edit {editCoreId, editFetch, editApply, editOrder, editKeepName, editMeta
 
   liftIO $ do
     DB.updateGame conn (finalGame {updateDate = ts})
-    ok $ bold_ (pretty finalGame.title) <+> dim_ "updated."
+    ok $ bold_ (white_ (pretty finalGame.title)) <+> dim_ "updated."
 
 handle Remove {removeCoreId, removeHard} = do
   conn <- askConn
   g <- requireGame removeCoreId
-  confirmed <- liftIO $ askConfirmation ("Are you sure you want to delete '" <> g.title <> "'? [y/N] ")
+  confirmed <-
+    liftIO $
+      askConfirmation
+        ( "Are you sure you want to delete"
+            <+> bold_ (white_ (pretty ("'" <> g.title <> "'")))
+            <> "?"
+        )
   if not confirmed
-    then liftIO $ printLn (dim_ "operation cancelled.")
+    then liftIO $ printLn (annotate (color Yellow) "!" <+> dim_ "operation cancelled.")
     else liftIO $ do
       DB.deleteGame conn removeCoreId
       ok $
-        bold_ (pretty g.title)
+        bold_ (white_ (pretty g.title))
           <+> dim_ "removed."
           <> if removeHard then dim_ " (TODO: cloud remove)" else mempty
 
@@ -374,7 +420,13 @@ handle Move {moveOldId, moveNewId} = do
   ts <- liftIO now
   liftIO $ DB.renameGame conn moveOldId moveNewId ts
   liftIO $ Session.renameSession moveOldId moveNewId
-  liftIO $ ok $ bold_ (pretty g.title) <+> dim_ ("renamed: #" <> pretty moveOldId <> " → #" <> pretty moveNewId)
+  liftIO $
+    ok $
+      bold_ (white_ (pretty g.title))
+        <+> dim_ "renamed:"
+        <+> annotate (color Magenta) (pretty ("#" <> moveOldId))
+        <+> dim_ "→"
+        <+> annotate (color Cyan <> bold) (pretty ("#" <> moveNewId))
 
 handle Run {runTarget, runSkip, runRandom, runRecent, runLast} = do
   conn <- askConn
@@ -456,11 +508,11 @@ handle Run {runTarget, runSkip, runRandom, runRecent, runLast} = do
       liftIO $ do
         spawnFoo g.coreId.unGameId g.title lp.programFile
         printLn $
-          annotate (color Green) "▶"
-            <+> bold_ (pretty g.title)
-            <+> dim_ (pretty ("(#" <> g.coreId.unGameId <> ")"))
+          annotate (color Green <> bold) "▶"
+            <+> bold_ (white_ (pretty g.title))
+            <+> annotate (color Magenta) (pretty ("(#" <> g.coreId.unGameId <> ")"))
             <> line
-            <> dim_ ("  " <> pretty lp.programFile)
+            <> dim_ ("  ↳ " <> pretty lp.programFile)
 
 handle Fetch {fetchName, fetchOrder} = do
   results <- liftIO $ fetchFromVndb (VndbName fetchName)
@@ -546,7 +598,11 @@ handle Use {useCoreId, useExePath, useSavePath, useGuide} = do
           savePath = useSavePath,
           guideFile = useGuide
         }
-    ok $ bold_ (pretty g.title) <+> dim_ (pretty ("(#" <> useCoreId <> ") exe →")) <+> pretty useExePath
+    ok $
+      bold_ (white_ (pretty g.title))
+        <+> annotate (color Magenta) (pretty ("(#" <> useCoreId <> ")"))
+        <+> dim_ "linked →"
+        <+> cyan_ (pretty useExePath)
 
 handle Info {infoCoreId} = do
   conn <- askConn
@@ -570,8 +626,8 @@ handle Status = do
       alive <- Session.isPidAlive s.fooPid
       mGame <- DB.getGame conn s.gameId
       let titleDoc = case mGame of
-            Just g -> bold_ (white_ (pretty g.title)) <+> dim_ (pretty ("(#" <> s.gameId <> ")"))
-            Nothing -> bold_ (pretty s.gameId)
+            Just g -> bold_ (white_ (pretty g.title)) <+> annotate (color Magenta) (pretty ("(#" <> s.gameId <> ")"))
+            Nothing -> bold_ (white_ (pretty s.gameId))
       printLn $
         (if alive then annotate (color Green <> bold) "▶" else annotate (color Yellow) "?")
           <+> titleDoc

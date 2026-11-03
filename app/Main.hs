@@ -12,8 +12,9 @@ import SenaVN.Command (commandParser)
 import SenaVN.Core (Env (Env), runRomi)
 import SenaVN.DB (withDB)
 import SenaVN.Handler (handle)
-import System.Exit (ExitCode, exitFailure)
-import System.IO (hSetEncoding, stderr, stdout, utf8)
+import System.Environment (getArgs)
+import System.Exit (ExitCode (..), exitFailure, exitSuccess, exitWith)
+import System.IO (hPutStr, hSetEncoding, stderr, stdout, utf8)
 
 #ifdef mingw32_HOST_OS
 import Data.Int (Int32)
@@ -30,13 +31,25 @@ main = do
   hSetEncoding stdout utf8
   hSetEncoding stderr utf8
 #endif
-  cmd <- execParser opts
+  args <- getArgs
+  cmd <- case execParserPure parserPrefs opts args of
+    Success c -> pure c
+    Failure failure -> do
+      let (msg, code) = renderFailure failure "sena"
+      case code of
+        ExitSuccess -> putStr msg
+        _ -> hPutStr stderr msg
+      exitWith code
+    CompletionInvoked compl -> do
+      msg <- execCompletion compl "sena"
+      putStr msg
+      exitSuccess
   handleApp cmd `catch` \(e :: SomeException) ->
     case fromException e of
       Just (exitCode :: ExitCode) -> throwIO exitCode
       Nothing -> do
         renderIO stderr . layoutPretty defaultLayoutOptions $
-          annotate (color Red) "error" <+> pretty (show e) <> line
+          annotate (color Red <> bold) "✗ error:" <+> pretty (show e) <> line
         exitFailure
   where
     handleApp cmd = do
@@ -45,7 +58,7 @@ main = do
       case result of
         Left err -> do
           renderIO stderr . layoutPretty defaultLayoutOptions $
-            annotate (color Red) "error" <+> pretty err <> line
+            annotate (color Red <> bold) "✗ error:" <+> pretty err <> line
           exitFailure
         Right () -> pure ()
 
@@ -53,3 +66,10 @@ main = do
       info
         (commandParser <**> helper)
         (fullDesc <> progDesc "sena — gal library manager")
+
+    parserPrefs =
+      prefs
+        ( showHelpOnEmpty
+            <> showHelpOnError
+            <> subparserInline
+        )

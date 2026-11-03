@@ -109,7 +109,6 @@ edit `<id>`：
 - **Config**：先定存储位置（独立配置文件还是 DB settings表）；token 不得进同步数据。
 - **Sync**：基于 GitHub repo + API，对应 `CloudData`；需要删除墓碑表（`Remove --hard` 目前无意义，两种行为相同）。
 - `sena import`：读取旧 `data.json`（旧 `RootState`），方便用真实数据自测。
-- 交互式提问 wizard（haskeline）作为 add/edit 的可选模式（`--interactive`）。
 
 ### P3（以后）
 

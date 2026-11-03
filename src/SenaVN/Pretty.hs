@@ -24,6 +24,7 @@ module SenaVN.Pretty
     printGameStat,
     render,
     renderDoc,
+    renderInline,
     getTermWidth,
     calcColumns,
     ListColumns (..),
@@ -66,7 +67,7 @@ import Prettyprinter
 import Prettyprinter.Render.Terminal
 import SenaVN.Types
 import System.Environment (lookupEnv)
-import System.IO (hIsTerminalDevice, stdout)
+import System.IO (hFlush, hIsTerminalDevice, stdout)
 import Text.Read (readMaybe)
 
 bold_ :: Doc AnsiStyle -> Doc AnsiStyle
@@ -184,7 +185,7 @@ linksList ls =
 
 progressBar :: Int -> Seconds -> Minutes -> Doc AnsiStyle
 progressBar barWidth playedSec expectedMin
-  | expectedMin <= 0 = dim_ "       —        "
+  | expectedMin <= 0 || playedSec <= 0 = dim_ "—"
   | otherwise =
       let expectedSec = expectedMin * 60
           pct = (playedSec * 100) `div` expectedSec
@@ -207,7 +208,8 @@ statusDot gwl
   | otherwise = green_ "●"
 
 data ListColumns = ListColumns
-  { colTitle :: !Int,
+  { colId :: !Int,
+    colTitle :: !Int,
     colDev :: !Int,
     colPlayed :: !Int,
     colProgress :: !Int,
@@ -218,22 +220,25 @@ data ListColumns = ListColumns
 
 calcColumns :: Int -> ListColumns
 calcColumns w =
-  let fixedW = 51
-      dynamicW = max 26 (w - fixedW)
+  let idW = 8
+      fixedW = idW + 48
+      dynamicW = max 24 (w - fixedW)
       devW = max 10 (min 22 (dynamicW `div` 3))
       titleW = dynamicW - devW
    in ListColumns
-        { colTitle = titleW,
+        { colId = idW,
+          colTitle = titleW,
           colDev = devW,
-          colPlayed = 10,
-          colProgress = 16,
-          colLastPlay = 12,
-          colRating = 7
+          colPlayed = 9,
+          colProgress = 14,
+          colLastPlay = 10,
+          colRating = 6
         }
 
 prettyGameRow :: ListColumns -> GameWithLocal -> Doc AnsiStyle
 prettyGameRow cols gwl =
   statusDot gwl
+    <+> fill cols.colId (annotate (color Magenta) (truncated cols.colId gwl.game.coreId.unGameId))
     <+> fill cols.colTitle (bold_ (truncated cols.colTitle gwl.game.title))
     <+> fill cols.colDev (dim_ (truncated cols.colDev gwl.game.developer))
     <+> fill cols.colPlayed playedDoc
@@ -261,7 +266,8 @@ listHeader :: ListColumns -> Doc AnsiStyle
 listHeader cols =
   dim_ $
     pretty ("  " :: Text)
-      <> fill cols.colTitle "title"
+      <> fill cols.colId "id"
+      <+> fill cols.colTitle "title"
       <+> fill cols.colDev "developer"
       <+> fill cols.colPlayed "played"
       <+> fill cols.colProgress "progress"
@@ -577,6 +583,16 @@ renderDoc doc = do
   if isTerm
     then renderIO stdout (layoutPretty opts doc)
     else renderIO stdout (layoutPretty opts (unAnnotate doc))
+
+renderInline :: Doc AnsiStyle -> IO ()
+renderInline doc = do
+  w <- getTermWidth
+  isTerm <- hIsTerminalDevice stdout `catch` \(_ :: SomeException) -> pure False
+  let opts = LayoutOptions (AvailablePerLine (max 40 w) 1.0)
+  if isTerm
+    then renderIO stdout (layoutPretty opts doc)
+    else renderIO stdout (layoutPretty opts (unAnnotate doc))
+  hFlush stdout
 
 render :: Doc AnsiStyle -> IO ()
 render = renderDoc
