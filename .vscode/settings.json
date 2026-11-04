@@ -1,4 +1,11 @@
 {
+  "haskell.serverExecutablePath": "haskell-language-server-9.8.2",
+  "haskell.serverExtraArgs": "+RTS -A32m -RTS",
   "haskell.sessionLoading": "singleComponent",
-  "haskell.componentsLoading": "single"
+  "haskell.trace.server": "off",
+  "haskell.plugin.stan.globalOn": false,
+  "haskell.plugin.eval.globalOn": false,
+  "haskell.plugin.retrie.globalOn": false,
+  "haskell.plugin.importLens.codeLensOn": false,
+  "haskell.plugin.ghcide-type-lenses.globalOn": false
 }

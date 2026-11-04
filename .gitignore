@@ -25,3 +25,5 @@ dist-newstyle
 # Added by cargo
 
 /target
+
+# hie.yaml
