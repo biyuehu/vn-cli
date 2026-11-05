@@ -71,7 +71,10 @@ impl Monitor {
 
       if let Some(proc) = sys.process(self.pid) {
         if self.proc_start_time > 0 && proc.start_time() != self.proc_start_time {
-          eprintln!("[foo] PID {} reused by another process, exiting.", self.pid);
+          eprintln!(
+            "[sena-guard] PID {} reused by another process, exiting.",
+            self.pid
+          );
           break;
         }
 
@@ -89,14 +92,17 @@ impl Monitor {
       } else {
         sys.refresh_processes(ProcessesToUpdate::All, true);
         if let Some((child_pid, child_start)) = self.find_child(&sys) {
-          eprintln!("[foo] parent exited, following child pid={}", child_pid);
+          eprintln!(
+            "[sena-guard] parent exited, following child pid={}",
+            child_pid
+          );
           self.pid = child_pid;
           self.proc_start_time = child_start;
           last_tick = Instant::now();
           thread::sleep(Duration::from_secs(1));
         } else {
           eprintln!(
-            "[foo] process exited. active={}s",
+            "[sena-guard] process exited. active={}s",
             self.active_seconds.round() as u64
           );
           break;

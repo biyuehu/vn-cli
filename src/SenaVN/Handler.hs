@@ -155,15 +155,15 @@ openEditor g = do
             playTimelines = g.playTimelines
           }
 
-spawnFoo :: Text -> Text -> Text -> IO ()
-spawnFoo gameId gameName exePath = do
+spawnDaemon :: Text -> Text -> Text -> IO ()
+spawnDaemon gameId gameName exePath = do
   sessDir <- Session.getSessionsDir
-  fooExe <- Session.getFooPath
+  daemonExe <- Session.getDaemonPath
   let sessionFile = sessDir </> T.unpack gameId <> ".session.json"
   _ <-
     createProcess
       ( proc
-          fooExe
+          daemonExe
           [ "--run",
             "--game-id",
             T.unpack gameId,
@@ -506,7 +506,7 @@ handle Run {runTarget, runSkip, runRandom, runRecent, runLast} = do
                 <> ")"
         Nothing -> pure ()
       liftIO $ do
-        spawnFoo g.coreId.unGameId g.title lp.programFile
+        spawnDaemon g.coreId.unGameId g.title lp.programFile
         printLn $
           annotate (color Green <> bold) "▶"
             <+> bold_ (white_ (pretty g.title))

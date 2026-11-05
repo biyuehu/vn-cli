@@ -7,4 +7,5 @@ dev:
   bun x nodemon --exec 'cabal run' --ext .hs
 
 build:
+  cargo build --release
   cabal build

@@ -8,7 +8,9 @@ module SenaVN.Session
     listSessions,
     isPidAlive,
     reconcileSessions,
+    getDaemonPath,
     getFooPath,
+    daemonExeName,
   )
 where
 
@@ -34,6 +36,7 @@ import System.Directory
 import System.Environment (getExecutablePath)
 import System.Exit (ExitCode (..))
 import System.FilePath (takeDirectory, takeExtension, (</>))
+import qualified System.Info as Info
 import System.Process (rawSystem)
 
 data SessionData = SessionData
@@ -123,19 +126,35 @@ listSessions = do
   where
     isSuffixOf suf s = drop (length s - length suf) s == suf
 
-getFooPath :: IO FilePath
-getFooPath = do
+daemonExeName :: FilePath
+daemonExeName = "sena-guard" <> if Info.os == "mingw32" then ".exe" else ""
+
+getDaemonPath :: IO FilePath
+getDaemonPath = do
   selfExe <- getExecutablePath
-  let siblingFoo = takeDirectory selfExe </> "foo.exe"
-  exists <- doesFileExist siblingFoo
-  if exists
-    then pure siblingFoo
-    else pure "foo.exe"
+  let siblingDaemon = takeDirectory selfExe </> daemonExeName
+      devRelease = "target" </> "release" </> daemonExeName
+      devDebug = "target" </> "debug" </> daemonExeName
+  existsSibling <- doesFileExist siblingDaemon
+  if existsSibling
+    then pure siblingDaemon
+    else do
+      existsRel <- doesFileExist devRelease
+      if existsRel
+        then pure devRelease
+        else do
+          existsDbg <- doesFileExist devDebug
+          if existsDbg
+            then pure devDebug
+            else pure daemonExeName
+
+getFooPath :: IO FilePath
+getFooPath = getDaemonPath
 
 isPidAlive :: Int -> IO Bool
 isPidAlive pid = do
-  foo <- getFooPath
-  code <- rawSystem foo ["--check-pid", show pid]
+  daemon <- getDaemonPath
+  code <- rawSystem daemon ["--check-pid", show pid]
   pure (code == ExitSuccess)
 
 reconcileSessions :: Connection -> IO ()

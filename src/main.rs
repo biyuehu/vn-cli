@@ -31,7 +31,7 @@ fn main() {
       exe_path,
       session_file,
     }) => {
-      eprintln!("[foo] launching: {} ({})", game_name, exe_path);
+      eprintln!("[sena-guard] launching: {} ({})", game_name, exe_path);
 
       let child = Command::new(&exe_path)
         .current_dir(
@@ -43,12 +43,12 @@ fn main() {
 
       match child {
         Err(e) => {
-          eprintln!("[foo] failed to launch: {}", e);
+          eprintln!("[sena-guard] failed to launch: {}", e);
           std::process::exit(1);
         }
         Ok(child) => {
           let pid = child.id();
-          eprintln!("[foo] pid={}", pid);
+          eprintln!("[sena-guard] pid={}", pid);
           let mut monitor = Monitor::new(game_id, session_file, pid);
           monitor.run();
         }
