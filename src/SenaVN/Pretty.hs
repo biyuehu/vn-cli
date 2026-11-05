@@ -154,6 +154,14 @@ truncated n t
 ruleW :: Int -> Doc AnsiStyle
 ruleW w = dim_ (pretty (replicate (max 20 w) '─'))
 
+wrapLine :: Int -> Text -> [Text]
+wrapLine maxW t
+  | T.null t = [""]
+  | T.length t <= maxW = [t]
+  | otherwise =
+      let (chunk, rest) = T.splitAt maxW t
+       in chunk : wrapLine maxW rest
+
 kv :: Int -> Text -> Doc AnsiStyle -> Doc AnsiStyle
 kv w k v =
   dim_ (pretty (T.replicate (w - T.length k) " " <> k <> "  ")) <> v
@@ -349,9 +357,9 @@ prettyGameDetailW w gwl =
       | T.null gwl.game.description = []
       | otherwise =
           [ emptyDoc,
-            dim_ "  description",
-            indent 4 (truncated (max 60 (w - 8)) gwl.game.description)
+            dim_ "  description"
           ]
+            <> map (indent 4 . pretty) (concatMap (wrapLine (max 40 (w - 8))) (T.lines gwl.game.description))
 
     sessionSection :: [Doc AnsiStyle]
     sessionSection
@@ -404,6 +412,7 @@ prettyFetchResultW w idx f =
       kv kw "release" (fmtDate f.releaseDate),
       kv kw "rating" (ratingDoc f.rating),
       kv kw "expected" (fmtHours f.expectedPlayHours),
+      kv kw "images" (pretty (show (length f.images) <> " image(s)")),
       emptyDoc,
       kv kw "tags" (tagsList f.tags)
     ]
@@ -423,9 +432,9 @@ prettyFetchResultW w idx f =
       | T.null f.description = []
       | otherwise =
           [ emptyDoc,
-            dim_ "  description",
-            indent 4 (truncated (max 60 (w - 8)) f.description)
+            dim_ "  description"
           ]
+            <> map (indent 4 . pretty) (concatMap (wrapLine (max 40 (w - 8))) (T.lines f.description))
 
     linksSection :: [Doc AnsiStyle]
     linksSection

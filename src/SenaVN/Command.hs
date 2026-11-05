@@ -15,8 +15,8 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Database.SQLite.Simple (Only (..), close, open, query_)
 import Options.Applicative
-import System.Directory (doesFileExist, getHomeDirectory)
-import System.FilePath ((</>))
+import qualified SenaVN.DB as DB
+import System.Directory (doesFileExist)
 
 gameIdCompleter :: Completer
 gameIdCompleter = listIOCompleter fetchGameIds
@@ -24,8 +24,7 @@ gameIdCompleter = listIOCompleter fetchGameIds
 fetchGameIds :: IO [String]
 fetchGameIds =
   ( do
-      home <- getHomeDirectory
-      let dbPath = home </> ".senavn" </> "sena.db"
+      dbPath <- DB.getDBPath
       exists <- doesFileExist dbPath
       if not exists
         then pure []
