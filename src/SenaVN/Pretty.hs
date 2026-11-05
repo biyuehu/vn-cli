@@ -44,7 +44,6 @@ module SenaVN.Pretty
     totalPlayed,
     ratingDoc,
     truncated,
-    rule,
     ruleW,
     kv,
     tagsList,
@@ -157,9 +156,6 @@ truncated :: Int -> Text -> Doc AnsiStyle
 truncated n t
   | T.length t <= n = pretty t
   | otherwise = pretty (T.take (n - 1) t <> "…")
-
-rule :: Doc AnsiStyle
-rule = ruleW 88
 
 ruleW :: Int -> Doc AnsiStyle
 ruleW w = dim_ (pretty (replicate (max 20 w) '─'))

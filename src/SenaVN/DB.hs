@@ -14,7 +14,6 @@ module SenaVN.DB
     deleteGame,
     getLocalPath,
     upsertLocalPath,
-    deleteLocalPath,
     upsertPlaySession,
     getPlaySessions,
     updateLastPlay,
@@ -51,6 +50,7 @@ withDB action = do
   bracket (open path) close $ \conn -> do
     execute_ conn "PRAGMA journal_mode=WAL"
     execute_ conn "PRAGMA foreign_keys=ON"
+    execute_ conn "PRAGMA busy_timeout = 5000"
     initDB conn
     action conn
 
@@ -291,10 +291,6 @@ upsertLocalPath conn lp =
     \   save_path=excluded.save_path,\
     \   guide_file=excluded.guide_file"
     (lp.localId.unGameId, lp.programFile, lp.savePath, lp.guideFile)
-
-deleteLocalPath :: Connection -> Text -> IO ()
-deleteLocalPath conn gid =
-  execute conn "DELETE FROM local_paths WHERE game_id=?" (Only gid)
 
 sessionId :: Text -> Int -> Text
 sessionId gid s = gid <> "-" <> T.pack (show s)

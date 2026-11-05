@@ -91,7 +91,8 @@ data Command
         runSkip :: !Bool,
         runRandom :: !Bool,
         runRecent :: !Bool,
-        runLast :: !Bool
+        runLast :: !Bool,
+        runFilter :: !(Maybe Text)
       }
   | Fetch
       { fetchName :: !Text,
@@ -287,6 +288,7 @@ commandParser =
         <*> switch (long "random" <> help "Random game")
         <*> switch (long "recent" <> short 'R' <> help "Most recently played")
         <*> switch (long "last" <> short 'L' <> help "Most recently added")
+        <*> optional (strOption (long "filter" <> short 'f' <> metavar "FILTER" <> help "Filter games by tag, developer, or title (useful with --random)"))
 
     fetchParser =
       Fetch

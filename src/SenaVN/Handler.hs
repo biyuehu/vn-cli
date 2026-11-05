@@ -78,7 +78,7 @@ applyFetch keepName g f =
       rating = f.rating,
       developer = f.developer,
       images = f.images,
-      links = map (\l -> Link {name = l.name, url = l.url}) f.links
+      links = f.links
     }
 
 applyMeta :: GameCore -> MetaOptions -> GameCore
@@ -428,7 +428,7 @@ handle Move {moveOldId, moveNewId} = do
         <+> dim_ "→"
         <+> annotate (color Cyan <> bold) (pretty ("#" <> moveNewId))
 
-handle Run {runTarget, runSkip, runRandom, runRecent, runLast} = do
+handle Run {runTarget, runSkip, runRandom, runRecent, runLast, runFilter} = do
   conn <- askConn
   let activeFlags = length $ filter Prelude.id [isJust runTarget, runRandom, runRecent, runLast]
   when (activeFlags > 1) $
@@ -436,23 +436,37 @@ handle Run {runTarget, runSkip, runRandom, runRecent, runLast} = do
 
   liftIO $ Session.reconcileSessions conn
 
-  games <- liftIO $ DB.getAllGames conn
-  when (null games) $ throwR "library is empty"
+  allGames <- liftIO $ DB.getAllGames conn
+  when (null allGames) $ throwR "library is empty"
+
+  let matchesFilter :: GameCore -> Bool
+      matchesFilter g = case runFilter of
+        Nothing -> True
+        Just flt ->
+          let fltLower = T.toLower flt
+           in fltLower `T.isInfixOf` T.toLower g.title
+                || any (\a -> fltLower `T.isInfixOf` T.toLower a) g.alias
+                || any (\t -> fltLower `T.isInfixOf` T.toLower t) g.tags
+                || fltLower `T.isInfixOf` T.toLower g.developer
+      games = filter matchesFilter allGames
+  when (null games) $ throwR "no games match the specified filter"
 
   g <- case runTarget of
     Nothing
       | runRandom ->
-          liftIO (randomOne games) >>= maybe (throwR "no games available") pure
+          liftIO (randomOne games) >>= maybe (throwR "no games available matching filter") pure
       | runRecent ->
           case sortOn (Down . (.lastPlay)) (filter (\x -> x.lastPlay > 0) games) of
-            [] -> throwR "no games played yet"
+            [] -> throwR "no games played yet (or none match filter)"
             (x : _) -> pure x
       | runLast ->
           case sortOn (Down . (.createDate)) games of
-            [] -> throwR "library is empty"
+            [] -> throwR "no games found matching filter"
             (x : _) -> pure x
+      | isJust runFilter ->
+          liftIO (randomOne games) >>= maybe (throwR "no games available matching filter") pure
       | otherwise ->
-          throwR "specify a game ID/name or use --random / --recent / --last"
+          throwR "specify a game ID/name or use --random / --recent / --last / --filter"
 
     Just target -> do
       mExact <- liftIO $ DB.getGame conn target

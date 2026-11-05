@@ -59,53 +59,26 @@ data GameWithLocal = GameWithLocal
   }
   deriving (Show, Eq, Generic, FromJSON, ToJSON)
 
-data CloudData = CloudData
-  { deleteIds :: ![GameId],
-    datas :: ![GameCore]
-  }
-  deriving (Show, Eq, Generic, FromJSON, ToJSON)
+-- data CloudData = CloudData
+--   { deleteIds :: ![GameId],
+--     datas :: ![GameCore]
+--   }
+--   deriving (Show, Eq, Generic, FromJSON, ToJSON)
 
-data AppConfig = AppConfig
-  { syncUsername :: !Text,
-    syncToken :: !Text,
-    syncFile :: !Text,
-    syncVisibility :: Bool
-  }
-  deriving (Show, Eq, Generic, FromJSON, ToJSON)
+-- data AppConfig = AppConfig
+--   { syncUsername :: !Text,
+--     syncToken :: !Text,
+--     syncFile :: !Text,
+--     syncVisibility :: Bool
+--   }
+--   deriving (Show, Eq, Generic, FromJSON, ToJSON)
 
-data RootState = RootState
-  { gameCore :: ![GameCore],
-    localPaths :: ![LocalPath],
-    config :: !AppConfig
-  }
-  deriving (Show, Eq, Generic, FromJSON, ToJSON)
-
-newtype VNTitle = VNTitle {title :: Text} deriving (Show, Generic, FromJSON)
-
-newtype VNScreenshot = VNScreenshot {url :: Text} deriving (Show, Generic, FromJSON)
-
-data VNTag = VNTag {name :: !Text, rating :: !Double, spoiler :: !(Maybe Int)} deriving (Show, Generic, FromJSON)
-
-newtype VNDeveloper = VNDeveloper {name :: Text} deriving (Show, Generic, FromJSON)
-
-data VNExtLink = VNExtLink {url :: !Text, name :: !Text} deriving (Show, Generic, FromJSON)
-
-data VNRawItem = VNRawItem
-  { id :: !Text,
-    title :: !Text,
-    titles :: ![VNTitle],
-    screenshots :: ![VNScreenshot],
-    description :: !(Maybe Text),
-    tags :: ![VNTag],
-    length_minutes :: !(Maybe Int),
-    released :: !(Maybe Text),
-    rating :: !(Maybe Double),
-    developers :: ![VNDeveloper],
-    extlinks :: ![VNExtLink]
-  }
-  deriving (Show, Generic, FromJSON)
-
-data VNResponse = VNResponse {results :: ![VNRawItem], more :: !Bool} deriving (Show, Generic, FromJSON)
+-- data RootState = RootState
+--   { gameCore :: ![GameCore],
+--     localPaths :: ![LocalPath],
+--     config :: !AppConfig
+--   }
+--   deriving (Show, Eq, Generic, FromJSON, ToJSON)
 
 data FetchGameData = FetchGameData
   { vndbId :: !Text,
@@ -118,10 +91,8 @@ data FetchGameData = FetchGameData
     rating :: !Double,
     developer :: !Text,
     images :: ![Text],
-    links :: ![VNExtLink]
+    links :: ![Link]
   }
   deriving (Show, Generic)
-
-data VNRequest = VNRequest {filters :: [Text], fields :: Text} deriving (Eq, Show, Generic)
 
 data VndbBy = VndbName Text | VndbId Text

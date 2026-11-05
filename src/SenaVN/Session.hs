@@ -9,7 +9,6 @@ module SenaVN.Session
     isPidAlive,
     reconcileSessions,
     getDaemonPath,
-    getFooPath,
     daemonExeName,
   )
 where
@@ -147,9 +146,6 @@ getDaemonPath = do
           if existsDbg
             then pure devDebug
             else pure daemonExeName
-
-getFooPath :: IO FilePath
-getFooPath = getDaemonPath
 
 isPidAlive :: Int -> IO Bool
 isPidAlive pid = do
