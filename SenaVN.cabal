@@ -43,7 +43,6 @@ common shared-properties
     random,
     req,
     sqlite-simple,
-    template-haskell,
     temporary,
     text,
     time,
@@ -55,7 +54,6 @@ library
   exposed-modules:
     SenaVN
     SenaVN.Api
-    SenaVN.Classes
     SenaVN.Command
     SenaVN.Core
     SenaVN.DB

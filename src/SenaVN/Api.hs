@@ -79,9 +79,7 @@ transformVNData raw =
         map (\t -> t.name) $
           sortBy (comparing (\t -> Down t.rating)) $
             filter (\t -> fromMaybe 0 t.spoiler == 0 && t.rating >= 2.0) itemTags
-    devName = case devs of
-      (VNDeveloper n : _) -> n
-      [] -> ""
+    devName = T.intercalate ", " [n | VNDeveloper n <- devs]
     imgList = map (\(VNScreenshot u) -> u) screens
 
     parseDateToTimestamp dateStr =

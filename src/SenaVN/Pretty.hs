@@ -3,18 +3,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module SenaVN.Pretty
-  ( prettyGameDetail,
-    prettyGameDetailW,
+  ( prettyGameDetailW,
     prettyGameRow,
-    prettyGames,
     prettyGamesW,
-    prettyFetchResult,
     prettyFetchResultW,
-    prettyFetchResults,
     prettyFetchResultsW,
-    prettyLibraryStats,
     prettyLibraryStatsW,
-    prettyGameStat,
     prettyGameStatW,
     printGame,
     printGames,
@@ -270,9 +264,6 @@ listHeader cols =
       <+> fill cols.colLastPlay "last play"
       <+> "rating"
 
-prettyGames :: [GameWithLocal] -> Doc AnsiStyle
-prettyGames = prettyGamesW 88
-
 prettyGamesW :: Int -> [GameWithLocal] -> Doc AnsiStyle
 prettyGamesW _ [] = dim_ "  no games in library."
 prettyGamesW w gs =
@@ -292,9 +283,6 @@ prettyGamesW w gs =
     runDoc = if runningCount > 0 then dim_ "  ·  " <> green_ (pretty (show runningCount <> " running")) else emptyDoc
     playDoc = if totalSec > 0 then dim_ "  ·  " <> pretty (fmtSecStr totalSec) <+> dim_ "played" else emptyDoc
     footer = dim_ ("  " <> pretty (show tot <> " game(s)")) <> playDoc <> runDoc
-
-prettyGameDetail :: GameWithLocal -> Doc AnsiStyle
-prettyGameDetail = prettyGameDetailW 88
 
 prettyGameDetailW :: Int -> GameWithLocal -> Doc AnsiStyle
 prettyGameDetailW w gwl =
@@ -324,6 +312,7 @@ prettyGameDetailW w gwl =
       <> sessionSection
       <> localSection
       <> linksSection
+      <> imagesSection
       <> [ruleW w]
   where
     kw = 10
@@ -393,8 +382,14 @@ prettyGameDetailW w gwl =
       | null gwl.game.links = []
       | otherwise = [linksList gwl.game.links]
 
-prettyFetchResult :: Int -> FetchGameData -> Doc AnsiStyle
-prettyFetchResult = prettyFetchResultW 88
+    imagesSection :: [Doc AnsiStyle]
+    imagesSection
+      | null gwl.game.images = []
+      | otherwise =
+          [ emptyDoc,
+            dim_ "  images"
+          ]
+            <> map (\img -> indent 4 (dim_ "· " <> cyan_ (pretty img))) gwl.game.images
 
 prettyFetchResultW :: Int -> Int -> FetchGameData -> Doc AnsiStyle
 prettyFetchResultW w idx f =
@@ -437,9 +432,6 @@ prettyFetchResultW w idx f =
       | null f.links = []
       | otherwise = [linksList f.links]
 
-prettyFetchResults :: [FetchGameData] -> Doc AnsiStyle
-prettyFetchResults = prettyFetchResultsW 88
-
 prettyFetchResultsW :: Int -> [FetchGameData] -> Doc AnsiStyle
 prettyFetchResultsW _ [] = dim_ "  no results."
 prettyFetchResultsW w fs =
@@ -481,9 +473,6 @@ computeStats games =
           topPlayed = top5
         }
 
-prettyLibraryStats :: [GameWithLocal] -> Doc AnsiStyle
-prettyLibraryStats = prettyLibraryStatsW 88
-
 prettyLibraryStatsW :: Int -> [GameWithLocal] -> Doc AnsiStyle
 prettyLibraryStatsW w games =
   let s = computeStats games
@@ -523,9 +512,6 @@ prettyLibraryStatsW w games =
           topSection,
           ruleW w
         ]
-
-prettyGameStat :: GameWithLocal -> Doc AnsiStyle
-prettyGameStat = prettyGameStatW 88
 
 prettyGameStatW :: Int -> GameWithLocal -> Doc AnsiStyle
 prettyGameStatW w gwl =

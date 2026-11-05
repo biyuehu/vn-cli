@@ -15,7 +15,6 @@ module SenaVN.DB
     getLocalPath,
     upsertLocalPath,
     upsertPlaySession,
-    getPlaySessions,
     updateLastPlay,
     renameGame,
   )
@@ -305,17 +304,6 @@ upsertPlaySession conn gid tl =
     \   end_time=excluded.end_time,\
     \   duration=excluded.duration"
     (sessionId gid tl.start, gid, tl.start, tl.end, tl.duration)
-
-getPlaySessions :: Connection -> Text -> IO [PlayTimeline]
-getPlaySessions conn gid = do
-  rows <-
-    query
-      conn
-      "SELECT start_time,end_time,duration FROM play_sessions\
-      \ WHERE game_id=? ORDER BY start_time"
-      (Only gid) ::
-      IO [(Int, Int, Int)]
-  pure $ map (\(s, e, d) -> PlayTimeline {start = s, end = e, duration = d}) rows
 
 updateLastPlay :: Connection -> Text -> Int -> IO ()
 updateLastPlay conn gid ts =
