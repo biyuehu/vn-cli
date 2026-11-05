@@ -43,7 +43,7 @@ data SessionData = SessionData
     startUnix :: !Int,
     lastHeartbeatUnix :: !Int,
     activeSeconds :: !Int,
-    fooPid :: !Int
+    guardPid :: !Int
   }
   deriving (Show, Generic)
 
@@ -157,7 +157,7 @@ reconcileSessions :: Connection -> IO ()
 reconcileSessions conn = do
   sessions <- listSessions
   forM_ sessions $ \s -> do
-    alive <- isPidAlive s.fooPid
+    alive <- isPidAlive s.guardPid
     unless alive $ do
       let tl =
             PlayTimeline

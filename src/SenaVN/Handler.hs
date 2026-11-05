@@ -299,7 +299,7 @@ attachRunningSessions :: [GameWithLocal] -> IO [GameWithLocal]
 attachRunningSessions games = do
   sessions <- Session.listSessions
   liveSessions <- fmap catMaybes $ forM sessions $ \s -> do
-    alive <- Session.isPidAlive s.fooPid
+    alive <- Session.isPidAlive s.guardPid
     pure $ if alive then Just (s.gameId, s.activeSeconds) else Nothing
   pure $
     map
@@ -412,9 +412,9 @@ handle Move {moveOldId, moveNewId} = do
   mRunning <- liftIO $ Session.readSession moveOldId
   case mRunning of
     Just sess -> do
-      alive <- liftIO $ Session.isPidAlive sess.fooPid
+      alive <- liftIO $ Session.isPidAlive sess.guardPid
       when alive $
-        throwR ("cannot rename game while it is running (PID: " <> T.pack (show sess.fooPid) <> ")")
+        throwR ("cannot rename game while it is running (PID: " <> T.pack (show sess.guardPid) <> ")")
     Nothing -> pure ()
   liftIO $ Session.reconcileSessions conn
   ts <- liftIO now
@@ -508,7 +508,7 @@ handle Run {runTarget, runSkip, runRandom, runRecent, runLast, runFilter} = do
       mSess <- liftIO $ Session.readSession g.coreId.unGameId
       case mSess of
         Just sess -> do
-          alive <- liftIO $ Session.isPidAlive sess.fooPid
+          alive <- liftIO $ Session.isPidAlive sess.guardPid
           when alive $
             throwR $
               "game is already running: "
@@ -516,7 +516,7 @@ handle Run {runTarget, runSkip, runRandom, runRecent, runLast, runFilter} = do
                 <> " (#"
                 <> g.coreId.unGameId
                 <> ", PID: "
-                <> T.pack (show sess.fooPid)
+                <> T.pack (show sess.guardPid)
                 <> ")"
         Nothing -> pure ()
       liftIO $ do
@@ -637,7 +637,7 @@ handle Status = do
   if null sessions
     then liftIO $ printLn (dim_ "no games running.")
     else liftIO $ forM_ sessions $ \s -> do
-      alive <- Session.isPidAlive s.fooPid
+      alive <- Session.isPidAlive s.guardPid
       mGame <- DB.getGame conn s.gameId
       let titleDoc = case mGame of
             Just g -> bold_ (white_ (pretty g.title)) <+> annotate (color Magenta) (pretty ("(#" <> s.gameId <> ")"))
@@ -647,7 +647,7 @@ handle Status = do
           <+> titleDoc
           <+> dim_ "·"
           <+> green_ (pretty (fmtSecStr s.activeSeconds))
-          <+> dim_ ("(PID " <> pretty s.fooPid <> ")")
+          <+> dim_ ("(PID " <> pretty s.guardPid <> ")")
 
 handle Sync =
   throwR "sync not yet implemented"

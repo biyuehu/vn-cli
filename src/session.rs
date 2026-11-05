@@ -7,5 +7,5 @@ pub struct SessionData {
   pub start_unix: i64,
   pub last_heartbeat_unix: i64,
   pub active_seconds: i64,
-  pub foo_pid: i64,
+  pub guard_pid: i64,
 }

@@ -45,7 +45,7 @@ impl Monitor {
       start_unix: self.start_time as i64,
       last_heartbeat_unix: now_secs() as i64,
       active_seconds: self.active_seconds.round() as i64,
-      foo_pid: std::process::id() as i64,
+      guard_pid: std::process::id() as i64,
     };
     let tmp = format!("{}.tmp", self.session_file);
     if let Ok(json) = serde_json::to_string(&sd) {

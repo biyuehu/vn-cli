@@ -37,6 +37,6 @@ pub fn parse_args() -> Result<Mode, String> {
         session_file: get("--session")?,
       })
     }
-    _ => Err("usage: foo.exe --run ... | foo.exe --check-pid <pid>".to_string()),
+    _ => Err("usage: sena-guard --run ... | sena-guard --check-pid <pid>".to_string()),
   }
 }
