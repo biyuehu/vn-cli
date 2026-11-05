@@ -18,6 +18,8 @@ import SenaVN.Types
 
 newtype VNTitle = VNTitle {title :: Text} deriving (Show, Generic, FromJSON)
 
+newtype VNImage = VNImage {url :: Text} deriving (Show, Generic, FromJSON)
+
 newtype VNScreenshot = VNScreenshot {url :: Text} deriving (Show, Generic, FromJSON)
 
 data VNTag = VNTag {name :: !Text, rating :: !Double, spoiler :: !(Maybe Int)} deriving (Show, Generic, FromJSON)
@@ -30,6 +32,7 @@ data VNRawItem = VNRawItem
   { id :: !Text,
     title :: !Text,
     titles :: ![VNTitle],
+    image :: !(Maybe VNImage),
     screenshots :: ![VNScreenshot],
     description :: !(Maybe Text),
     tags :: ![VNTag],
@@ -63,6 +66,7 @@ transformVNData raw =
       { id = itemId,
         title = itemTitle,
         titles = itemTitles,
+        image = itemImage,
         screenshots = screens,
         description = itemDesc,
         tags = itemTags,
@@ -80,7 +84,8 @@ transformVNData raw =
           sortBy (comparing (\t -> Down t.rating)) $
             filter (\t -> fromMaybe 0 t.spoiler == 0 && t.rating >= 2.0) itemTags
     devName = T.intercalate ", " [n | VNDeveloper n <- devs]
-    imgList = map (\(VNScreenshot u) -> u) screens
+    screensUrls = map (\(VNScreenshot u) -> u) screens
+    imgList = maybe screensUrls (\(VNImage u) -> u : screensUrls) itemImage
 
     parseDateToTimestamp dateStr =
       let str = T.unpack (T.strip dateStr)

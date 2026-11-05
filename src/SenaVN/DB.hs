@@ -15,6 +15,7 @@ module SenaVN.DB
     getLocalPath,
     upsertLocalPath,
     upsertPlaySession,
+    getPlaySessions,
     updateLastPlay,
     renameGame,
   )
@@ -150,12 +151,7 @@ gameSelectCols =
 
 buildGameCore :: Connection -> GameRow -> IO GameCore
 buildGameCore conn r = do
-  sessRows <-
-    query
-      conn
-      "SELECT start_time,end_time,duration FROM play_sessions WHERE game_id=? ORDER BY start_time"
-      (Only r.grId) ::
-      IO [(Int, Int, Int)]
+  playSessions <- getPlaySessions conn r.grId
   pure
     GameCore
       { coreId = GameId r.grId,
@@ -166,7 +162,7 @@ buildGameCore conn r = do
         tags = decodeJson r.grTags [],
         images = decodeJson r.grImages [],
         links = decodeJson r.grLinks [],
-        playTimelines = map (\(s, e, d) -> PlayTimeline {start = s, end = e, duration = d}) sessRows,
+        playTimelines = playSessions,
         expectedPlayTime = r.grExpected,
         lastPlay = r.grLastPlay,
         createDate = r.grCreate,
@@ -304,6 +300,17 @@ upsertPlaySession conn gid tl =
     \   end_time=excluded.end_time,\
     \   duration=excluded.duration"
     (sessionId gid tl.start, gid, tl.start, tl.end, tl.duration)
+
+getPlaySessions :: Connection -> Text -> IO [PlayTimeline]
+getPlaySessions conn gid = do
+  rows <-
+    query
+      conn
+      "SELECT start_time,end_time,duration FROM play_sessions\
+      \ WHERE game_id=? ORDER BY start_time"
+      (Only gid) ::
+      IO [(Int, Int, Int)]
+  pure $ map (\(s, e, d) -> PlayTimeline {start = s, end = e, duration = d}) rows
 
 updateLastPlay :: Connection -> Text -> Int -> IO ()
 updateLastPlay conn gid ts =
