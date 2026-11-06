@@ -21,6 +21,8 @@ import SenaVN.Api (fetchFromVndb)
 import SenaVN.Command
 import SenaVN.Core (Romi, askConn, throwR)
 import qualified SenaVN.DB as DB
+import qualified Data.Text.IO as TIO
+import Database.SQLite.Simple (Connection)
 import SenaVN.Pretty
 import qualified SenaVN.Session as Session
 import SenaVN.Types
@@ -114,13 +116,17 @@ emptyGameCore gid name ts =
       developer = ""
     }
 
-findEditor :: IO (Maybe FilePath)
-findEditor = do
-  mVisual <- lookupEnv "VISUAL"
-  mEditor <- lookupEnv "EDITOR"
-  case filter (not . null) (maybe [] pure mVisual ++ maybe [] pure mEditor) of
-    (ed : _) -> pure (Just ed)
-    [] -> findInPath ["nvim", "vim", "nano", "vi"]
+findEditor :: Connection -> IO (Maybe FilePath)
+findEditor conn = do
+  mCfgEditor <- DB.getConfig conn "core.editor"
+  case mCfgEditor of
+    Just ed | not (T.null (T.strip ed)) -> pure (Just (T.unpack (T.strip ed)))
+    _ -> do
+      mVisual <- lookupEnv "VISUAL"
+      mEditor <- lookupEnv "EDITOR"
+      case filter (not . null) (maybe [] pure mVisual ++ maybe [] pure mEditor) of
+        (ed : _) -> pure (Just ed)
+        [] -> findInPath ["nvim", "vim", "nano", "vi"]
   where
     findInPath [] = pure Nothing
     findInPath (x : xs) = do
@@ -131,10 +137,11 @@ findEditor = do
 
 openEditor :: GameCore -> Romi GameCore
 openEditor g = do
-  mEditor <- liftIO findEditor
+  conn <- askConn
+  mEditor <- liftIO $ findEditor conn
   editor <- case mEditor of
     Nothing ->
-      throwR "no editor found: please set $VISUAL or $EDITOR, or install nvim/vim/nano/vi"
+      throwR "no editor found: please configure core.editor, set $VISUAL or $EDITOR, or install nvim/vim/nano/vi"
     Just ed -> pure ed
   raw <- liftIO $
     withSystemTempFile "sena-edit-.json" $ \path h -> do
@@ -328,7 +335,8 @@ handle Add {addName, addCoreId, addPath, addNoFetch, addSkip, addOrder, addKeepN
               then pure base
               else openEditor base
           else do
-            results <- liftIO $ fetchFromVndb (VndbName addName)
+            mProxy <- liftIO $ DB.getConfig conn "fetch.proxy"
+            results <- liftIO $ fetchFromVndb mProxy (VndbName addName)
             when (null results) $ throwR "no VNDB results found"
             selected <-
               if addOrder /= 1 || addSkip
@@ -358,7 +366,8 @@ handle Edit {editCoreId, editFetch, editApply, editOrder, editKeepName, editMeta
       else
         if editFetch
           then do
-            results <- liftIO $ fetchFromVndb (VndbName g.title)
+            mProxy <- liftIO $ DB.getConfig conn "fetch.proxy"
+            results <- liftIO $ fetchFromVndb mProxy (VndbName g.title)
             when (null results) $ throwR "no VNDB results found"
             selected <-
               if editOrder /= 1 || editApply
@@ -529,7 +538,9 @@ handle Run {runTarget, runSkip, runRandom, runRecent, runLast, runFilter} = do
             <> dim_ ("  ↳ " <> pretty lp.programFile)
 
 handle Fetch {fetchName, fetchOrder} = do
-  results <- liftIO $ fetchFromVndb (VndbName fetchName)
+  conn <- askConn
+  mProxy <- liftIO $ DB.getConfig conn "fetch.proxy"
+  results <- liftIO $ fetchFromVndb mProxy (VndbName fetchName)
   when (null results) $ throwR "no results found"
   case fetchOrder of
     0 -> liftIO $ printFetchResults results
@@ -652,25 +663,42 @@ handle Status = do
 handle Sync =
   throwR "sync not yet implemented"
 
-handle Config {configKey, configValue} = do
+handle Config {configKey, configValue, configUnset, configEdit} = do
   conn <- askConn
-  case (configKey, configValue) of
-    (Nothing, Nothing) -> do
-      cfgs <- liftIO $ DB.getAllConfigs conn
-      if null cfgs
-        then liftIO $ putStrLn "no configuration set."
-        else liftIO $ forM_ cfgs $ \(k, v) ->
-          printLn $ cyan_ (pretty k) <+> dim_ "=" <+> pretty v
-    (Just k, Nothing) -> do
-      mv <- liftIO $ DB.getConfig conn k
-      case mv of
-        Just v -> liftIO $ putStrLn (T.unpack v)
-        Nothing -> throwR $ "config key '" <> k <> "' not found"
-    (Just k, Just v) -> do
-      liftIO $ DB.setConfig conn k v
-      liftIO . ok $ cyan_ (pretty k) <+> dim_ "=" <+> pretty v
-    (Nothing, Just _) ->
-      throwR "cannot specify value without key"
+  let doUnset k = do
+        deleted <- liftIO $ DB.deleteConfig conn k
+        if deleted
+          then liftIO . ok $ dim_ "unset" <+> cyan_ (pretty k)
+          else throwR $ "config key '" <> k <> "' not found"
+
+  if configEdit || (configKey == Just "edit" && configValue == Nothing)
+    then editConfigInteractive conn
+    else case configUnset of
+      Just k -> doUnset k
+      Nothing -> case (configKey, configValue) of
+        (Just "rm", Just k) -> doUnset k
+        (Just "unset", Just k) -> doUnset k
+        (Just "rm", Nothing) -> throwR "please specify config key to remove (e.g. sena config rm <key>)"
+        (Just "unset", Nothing) -> throwR "please specify config key to remove (e.g. sena config unset <key>)"
+        (Nothing, Nothing) -> do
+          cfgs <- liftIO $ DB.getAllConfigs conn
+          if null cfgs
+            then liftIO $ putStrLn "no configuration set."
+            else liftIO $ forM_ cfgs $ \(k, v) ->
+              printLn $ cyan_ (pretty k) <+> dim_ "=" <+> pretty (maskSensitive k v)
+        (Just k, Nothing) -> do
+          mv <- liftIO $ DB.getConfig conn k
+          case mv of
+            Just v -> liftIO $ putStrLn (T.unpack v)
+            Nothing -> throwR $ "config key '" <> k <> "' not found"
+        (Just k, Just v) -> do
+          case validateConfigKey k of
+            Left err -> throwR err
+            Right () -> do
+              liftIO $ DB.setConfig conn k v
+              liftIO . ok $ cyan_ (pretty k) <+> dim_ "=" <+> pretty v
+        (Nothing, Just _) ->
+          throwR "cannot specify value without key"
 
 handle Completion {completionShell} = liftIO $ do
   case T.toLower completionShell of
@@ -678,3 +706,70 @@ handle Completion {completionShell} = liftIO $ do
     "zsh" -> putStrLn "eval \"$(sena --zsh-completion-script sena)\""
     "fish" -> putStrLn "sena --fish-completion-script sena | source"
     _ -> putStrLn "Usage: eval \"$(sena --bash-completion-script sena)\" (supported: bash, zsh, fish)"
+
+maskSensitive :: Text -> Text -> Text
+maskSensitive k v
+  | isSensitive k =
+      let len = T.length v
+       in if len <= 8
+            then "********"
+            else T.take 4 v <> "****" <> T.takeEnd 2 v
+  | otherwise = v
+  where
+    isSensitive s =
+      let lower = T.toLower s
+       in any (`T.isInfixOf` lower) ["token", "secret", "password"]
+
+validateConfigKey :: Text -> Either Text ()
+validateConfigKey k
+  | T.null (T.strip k) = Left "config key cannot be empty"
+  | T.any (\c -> c == ' ' || c == '\t' || c == '=' || c == '#' || c == ';') k =
+      Left "config key cannot contain whitespace, '=', '#', or ';'"
+  | otherwise = Right ()
+
+editConfigInteractive :: Connection -> Romi ()
+editConfigInteractive conn = do
+  mEditor <- liftIO $ findEditor conn
+  editor <- case mEditor of
+    Nothing ->
+      throwR "no editor found: please configure core.editor, set $VISUAL or $EDITOR, or install nvim/vim/nano/vi"
+    Just ed -> pure ed
+  cfgs <- liftIO $ DB.getAllConfigs conn
+  let initialContent =
+        T.unlines $
+          [ "# SenaVN Configuration",
+            "# Format: key = value",
+            "# Lines starting with '#' or ';' are ignored.",
+            ""
+          ]
+            ++ map (\(k, v) -> k <> " = " <> v) cfgs
+  content <- liftIO $
+    withSystemTempFile "sena-config-.ini" $ \path h -> do
+      TIO.hPutStr h initialContent
+      hClose h
+      let (prog, args) = case words editor of
+            (p : rest) -> (p, rest)
+            [] -> (editor, [])
+      callProcess prog (args ++ [path])
+      TIO.readFile path
+  parsed <- parseConfigContent content
+  liftIO $ DB.setAllConfigs conn parsed
+  liftIO . ok $ pretty ("Configuration updated (" <> show (length parsed) <> " entries).")
+  where
+    parseConfigContent :: Text -> Romi [(Text, Text)]
+    parseConfigContent txt = mapM parseLine (filter (not . isIgnored) (T.lines txt))
+
+    isIgnored l =
+      let s = T.strip l
+       in T.null s || "#" `T.isPrefixOf` s || ";" `T.isPrefixOf` s
+
+    parseLine l =
+      let (kRaw, rest) = T.breakOn "=" l
+       in if T.null rest
+            then throwR $ "invalid configuration line (missing '='): " <> l
+            else
+              let k = T.strip kRaw
+                  v = T.strip (T.drop 1 rest)
+               in case validateConfigKey k of
+                    Left err -> throwR ("invalid configuration: " <> err <> " in line '" <> l <> "'")
+                    Right () -> pure (k, v)

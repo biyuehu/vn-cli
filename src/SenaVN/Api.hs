@@ -15,6 +15,7 @@ import Data.Time.Format (defaultTimeLocale, parseTimeM)
 import GHC.Generics (Generic)
 import Network.HTTP.Req
 import SenaVN.Types
+import System.Environment (setEnv)
 
 newtype VNTitle = VNTitle {title :: Text} deriving (Show, Generic, FromJSON)
 
@@ -112,13 +113,23 @@ formatHttpError (VanillaHttpException err) =
             then "Cannot connect to VNDB (network offline or DNS resolution failed)."
             else "VNDB network request failed: " ++ errStr
 
-fetchFromVndb :: VndbBy -> IO [FetchGameData]
-fetchFromVndb vndbBy = do
+fetchFromVndb :: Maybe Text -> VndbBy -> IO [FetchGameData]
+fetchFromVndb mProxy vndbBy = do
+  case mProxy of
+    Just p | not (T.null (T.strip p)) -> do
+      let proxyStr = normalizeProxyUrl (T.strip p)
+      setEnv "HTTPS_PROXY" proxyStr
+      setEnv "HTTP_PROXY" proxyStr
+    _ -> pure ()
   res <- try (runReq defaultHttpConfig queryVndb)
   case res of
     Right val -> pure val
     Left err -> throwIO $ userError (formatHttpError err)
   where
+    normalizeProxyUrl p
+      | "http://" `T.isPrefixOf` p || "https://" `T.isPrefixOf` p = T.unpack p
+      | otherwise = "http://" ++ T.unpack p
+
     queryVndb = do
       response <-
         req

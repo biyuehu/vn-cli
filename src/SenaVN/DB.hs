@@ -21,12 +21,15 @@ module SenaVN.DB
     getAllConfigs,
     getConfig,
     setConfig,
+    deleteConfig,
+    setAllConfigs,
   )
 where
 
 import Control.Exception (bracket)
 import Data.Aeson (FromJSON, ToJSON, decode, encode)
 import qualified Data.ByteString.Lazy as BL
+import Data.Foldable (forM_)
 import qualified Data.Map.Strict as Map
 import Data.Maybe (fromMaybe, listToMaybe)
 import Data.Text (Text)
@@ -388,3 +391,15 @@ setConfig conn k v =
     "INSERT INTO configs (key,value) VALUES (?,?)\
     \ ON CONFLICT(key) DO UPDATE SET value=excluded.value"
     (k, v)
+
+deleteConfig :: Connection -> Text -> IO Bool
+deleteConfig conn k = do
+  execute conn "DELETE FROM configs WHERE key=?" (Only k)
+  n <- changes conn
+  pure (n > 0)
+
+setAllConfigs :: Connection -> [(Text, Text)] -> IO ()
+setAllConfigs conn kvs = withTransaction conn $ do
+  execute_ conn "DELETE FROM configs"
+  forM_ kvs $ \(k, v) ->
+    execute conn "INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)" (k, v)

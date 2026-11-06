@@ -122,7 +122,9 @@ data Command
   | Sync
   | Config
       { configKey :: !(Maybe Text),
-        configValue :: !(Maybe Text)
+        configValue :: !(Maybe Text),
+        configUnset :: !(Maybe Text),
+        configEdit :: !Bool
       }
   | Completion {completionShell :: !Text}
   deriving (Show)
@@ -197,7 +199,7 @@ commandParser =
       <> sub "info" infoParser' "Show game details"
       <> sub "status" statusParser "Show running games"
       <> sub "sync" syncParser "Sync to GitHub"
-      <> sub "config" cfgParser "Set config value"
+      <> sub "config" cfgParser "Manage configuration"
       <> sub "completion" completionParser "Generate shell completion script"
   where
     sub cmd p desc = command cmd (info (p <**> helper) (progDesc desc))
@@ -377,6 +379,8 @@ commandParser =
       Config
         <$> optional (argument str (metavar "KEY" <> help "Config key"))
         <*> optional (argument str (metavar "VALUE" <> help "Config value"))
+        <*> optional (strOption (long "unset" <> short 'u' <> metavar "KEY" <> help "Remove config key"))
+        <*> switch (long "edit" <> short 'e' <> help "Edit configuration in $EDITOR")
     completionParser =
       Completion
         <$> argument str (metavar "SHELL" <> help "bash|zsh|fish")
