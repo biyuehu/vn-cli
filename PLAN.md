@@ -79,32 +79,6 @@ edit `<id>`：
 
 ## 8. 待办
 
-### P0（主链路 add → run → 退出 → list 目前跑不通）
-
-1. [x] **`spawnFoo` 与 foo 参数不匹配**：Handler 没传 `--run`，foo 直接 usage 退出。改为 `spawnProcess`/`createProcess`，第一个参数 `--run`，用 `getExecutablePath` 同目录定位 foo.exe；`Session.getFooPath` 同样改（目前假定在 PATH）。Windows 下 detach（`detach_console = True`，必要时 `create_new_console`），使 foo 不随终端关闭。
-2. [x] **SessionData 字段不一致**：Haskell 有 `exePath`，Rust 没有，Aeson 解析必败，且 `listSessions` 吞掉错误导致 status 永远为空、reconcile 不生效。决议：删除 Haskell 侧 `exePath`（foo 用不到）。
-3. [x] **foo 正常退出会丢时长**：`run()` 结尾删了 session 但没人写库。改为 foo 退出时只写最终快照、**不删文件**，由 sena reconcile 入库后删除。`run` 启动前应拒绝“该游戏 session 已存在且 foo 存活”（防重复启动、防覆盖）。
-4. [x] **`applyMeta` 的 vndbId**：`m.metaVndbId <> g.vndbId` 会把两个 `Just` 拼成 `"v2v1"`，改 `<|>`（`Control.Applicative`）。
-5. [x] **VNDB 请求缺 `description`**：`Api.fetchFromVndb` 的 fields 补上，否则简介永远为空。
-6. [x] **editor 实现**：按第 5 节落地（替换 `openEditor`）；编辑后**强制恢复原 `coreId`、`createDate`、`playTimelines`**，防止在 editor 里改坏主键/外键。
-7. [x] **rm 确认**：haskeline `[y/N]`。
-
-### P1（健壮性）
-
-- [x] 错误出口：`Left err` 写 stderr 并 `exitFailure`；`Fetch` 的 `invalid --order` 也要非 0 退出；`main` 外层 `catch` SQL/HTTP/IO 异常，输出友好信息。
-- [x] VNDB 数据：`parseDateToTimestamp` 现用 365/30 天估算且只认 `YYYY-MM-DD`，用 `Data.Time.parseTimeM` 多格式回退（`YYYY-MM`、`YYYY`、`TBA`→0）；`released` 改 `Maybe Text`；请求 `tags.spoiler` 并过滤剧透；捕获 `req` 的 HTTP 异常。
-- [x] Session 读取：`eitherDecodeFileStrict` 外包 `try` / 安全重试（防止 foo rename 瞬间的文件锁竞争）。
-- [x] foo：用 `Instant` 累加真实高精度间隔代替 `active_time += 1`，只刷新目标 pid；记录进程启动时间做 PID 复用防护。
-- [x] Schema 精简：去掉附属表（aliases/tags/images/links），收拢为 games 表内的 array 字段。
-- DB：`PRAGMA busy_timeout`；`PRAGMA user_version` 迁移机制（同步阶段要加墓碑表）。
-- [x] 非 TTY 输出（管道/重定向）用 `hSupportsANSI` 判断，退化为 `unAnnotate`；动态适配终端宽度。
-
-### P2（功能）
-
-- [x] 总时长合并运行中 session；`list`/`info` 动态展示当前正在玩的 session 时长与进度；`statusDot` 增加“正在玩”高亮。
-- [x] `stat` 做真正统计（全库统计看板、通关率、Top 5 排行条形图、单游戏对比看板）。
-- [x] `sena mv <old-id> <new-id>`：安全重命名主键，同步修改 local_paths, play_sessions 及 session 临时文件。
-- [x] `run` 的短选项改为 `-R`=recent，支持 `--filter <dsl>` 与 shortcut。
 - **Filter DSL**：独立设计，供 list/stat/tl/run 共用（当前所有 filter 参数为空操作）。
 - **Config**：先定存储位置（独立配置文件还是 DB settings表）；token 不得进同步数据。
 - **Sync**：基于 GitHub repo + API，对应 `CloudData`；需要删除墓碑表（`Remove --hard` 目前无意义，两种行为相同）。
@@ -113,7 +87,6 @@ edit `<id>`：
 ### P3（以后）
 
 - TUI（brick）：tree 形式，顶级节点为子命令，展开后为游戏；只做可选浏览层，不替代 CLI。
-- [x] 清理：Cargo.toml 的 `roga` 未使用；`src/lib.rs`、`src/utils/*` 若为旧 tauri 代码则删除（否则 cargo 会尝试编译 lib target）；justfile 的 `build` 需同时跑 cargo 并复制 foo.exe；README TODO 同步更新。
 - 测试：`applyMeta`、`applyFetch`、`pickResult`、日期解析、session JSON 往返、reconcile 都是纯函数/易隔离，优先补测。
 
 ## 9. 建议顺序
