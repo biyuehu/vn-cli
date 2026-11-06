@@ -19,7 +19,6 @@ extra-doc-files:
 
 common shared-properties
   ghc-options: -Wall
-  -- TODO: default-language 变成 GHC2021（GHC 9.8.2 完全支持，升级后自带 DeriveGeneric 等扩展）
   default-language: Haskell2010
   default-extensions:
     DeriveAnyClass
@@ -33,6 +32,7 @@ common shared-properties
     aeson-pretty,
     base ^>=4.19,
     bytestring,
+    containers,
     directory,
     filepath,
     haskeline,

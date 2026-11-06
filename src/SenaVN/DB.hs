@@ -18,13 +18,16 @@ module SenaVN.DB
     getPlaySessions,
     updateLastPlay,
     renameGame,
+    getAllConfigs,
+    getConfig,
+    setConfig,
   )
 where
 
 import Control.Exception (bracket)
-import Control.Monad (forM)
 import Data.Aeson (FromJSON, ToJSON, decode, encode)
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.Map.Strict as Map
 import Data.Maybe (fromMaybe, listToMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -87,6 +90,10 @@ initDB conn =
       \  start_time INTEGER NOT NULL,\
       \  end_time   INTEGER NOT NULL DEFAULT 0,\
       \  duration   INTEGER NOT NULL DEFAULT 0\
+      \)",
+      "CREATE TABLE IF NOT EXISTS configs (\
+      \  key   TEXT PRIMARY KEY,\
+      \  value TEXT NOT NULL\
       \)"
     ]
 
@@ -149,28 +156,31 @@ gameSelectCols =
   \last_play,create_date,update_date,release_date,rating,developer,\
   \alias,tags,images,links FROM games"
 
+buildGameCoreFromRow :: Map.Map Text [PlayTimeline] -> GameRow -> GameCore
+buildGameCoreFromRow sessMap r =
+  GameCore
+    { coreId = GameId r.grId,
+      vndbId = r.grVndbId,
+      title = r.grTitle,
+      description = r.grDesc,
+      alias = decodeJson r.grAlias [],
+      tags = decodeJson r.grTags [],
+      images = decodeJson r.grImages [],
+      links = decodeJson r.grLinks [],
+      playTimelines = Map.findWithDefault [] r.grId sessMap,
+      expectedPlayTime = r.grExpected,
+      lastPlay = r.grLastPlay,
+      createDate = r.grCreate,
+      updateDate = r.grUpdate,
+      releaseDate = r.grRelease,
+      rating = r.grRating,
+      developer = r.grDev
+    }
+
 buildGameCore :: Connection -> GameRow -> IO GameCore
 buildGameCore conn r = do
   playSessions <- getPlaySessions conn r.grId
-  pure
-    GameCore
-      { coreId = GameId r.grId,
-        vndbId = r.grVndbId,
-        title = r.grTitle,
-        description = r.grDesc,
-        alias = decodeJson r.grAlias [],
-        tags = decodeJson r.grTags [],
-        images = decodeJson r.grImages [],
-        links = decodeJson r.grLinks [],
-        playTimelines = playSessions,
-        expectedPlayTime = r.grExpected,
-        lastPlay = r.grLastPlay,
-        createDate = r.grCreate,
-        updateDate = r.grUpdate,
-        releaseDate = r.grRelease,
-        rating = r.grRating,
-        developer = r.grDev
-      }
+  pure $ buildGameCoreFromRow (Map.singleton r.grId playSessions) r
 
 fromLocalRow :: LocalRow -> LocalPath
 fromLocalRow lr =
@@ -200,14 +210,45 @@ getGameWithLocal conn gid = do
 getAllGames :: Connection -> IO [GameCore]
 getAllGames conn = do
   rows <- query_ conn (gameSelectCols <> " ORDER BY title") :: IO [GameRow]
-  forM rows (buildGameCore conn)
+  sessRows <-
+    query_
+      conn
+      "SELECT game_id,start_time,end_time,duration FROM play_sessions ORDER BY start_time" ::
+      IO [(Text, Int, Int, Int)]
+  let sessMap =
+        Map.fromListWith
+          (flip (++))
+          [(gid, [PlayTimeline s e d]) | (gid, s, e, d) <- sessRows]
+  pure $ map (buildGameCoreFromRow sessMap) rows
 
 getAllGamesWithLocal :: Connection -> IO [GameWithLocal]
 getAllGamesWithLocal conn = do
-  games <- getAllGames conn
-  forM games $ \g -> do
-    ml <- getLocalPath conn g.coreId.unGameId
-    pure GameWithLocal {game = g, local = ml, running = Nothing}
+  rows <- query_ conn (gameSelectCols <> " ORDER BY title") :: IO [GameRow]
+  sessRows <-
+    query_
+      conn
+      "SELECT game_id,start_time,end_time,duration FROM play_sessions ORDER BY start_time" ::
+      IO [(Text, Int, Int, Int)]
+  localRows <-
+    query_
+      conn
+      "SELECT game_id,program_file,save_path,guide_file FROM local_paths" ::
+      IO [LocalRow]
+  let sessMap =
+        Map.fromListWith
+          (flip (++))
+          [(gid, [PlayTimeline s e d]) | (gid, s, e, d) <- sessRows]
+      localMap =
+        Map.fromList
+          [(lr.lrGameId, fromLocalRow lr) | lr <- localRows]
+  pure
+    [ GameWithLocal
+        { game = buildGameCoreFromRow sessMap r,
+          local = Map.lookup r.grId localMap,
+          running = Nothing
+        }
+    | r <- rows
+    ]
 
 insertGame :: Connection -> GameCore -> IO ()
 insertGame conn g = withTransaction conn $ do
@@ -328,3 +369,22 @@ renameGame conn oldId newId ts = withTransaction conn $ do
     conn
     "UPDATE play_sessions SET id=? || '-' || start_time, game_id=? WHERE game_id=?"
     (newId, newId, oldId)
+
+getAllConfigs :: Connection -> IO [(Text, Text)]
+getAllConfigs conn =
+  query_ conn "SELECT key,value FROM configs ORDER BY key"
+
+getConfig :: Connection -> Text -> IO (Maybe Text)
+getConfig conn k = do
+  rows <- query conn "SELECT value FROM configs WHERE key=?" (Only k) :: IO [Only Text]
+  pure $ case rows of
+    (Only v : _) -> Just v
+    [] -> Nothing
+
+setConfig :: Connection -> Text -> Text -> IO ()
+setConfig conn k v =
+  execute
+    conn
+    "INSERT INTO configs (key,value) VALUES (?,?)\
+    \ ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+    (k, v)

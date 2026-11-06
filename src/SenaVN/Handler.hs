@@ -652,8 +652,25 @@ handle Status = do
 handle Sync =
   throwR "sync not yet implemented"
 
-handle Config {} =
-  throwR "config not yet implemented"
+handle Config {configKey, configValue} = do
+  conn <- askConn
+  case (configKey, configValue) of
+    (Nothing, Nothing) -> do
+      cfgs <- liftIO $ DB.getAllConfigs conn
+      if null cfgs
+        then liftIO $ putStrLn "no configuration set."
+        else liftIO $ forM_ cfgs $ \(k, v) ->
+          printLn $ cyan_ (pretty k) <+> dim_ "=" <+> pretty v
+    (Just k, Nothing) -> do
+      mv <- liftIO $ DB.getConfig conn k
+      case mv of
+        Just v -> liftIO $ putStrLn (T.unpack v)
+        Nothing -> throwR $ "config key '" <> k <> "' not found"
+    (Just k, Just v) -> do
+      liftIO $ DB.setConfig conn k v
+      liftIO . ok $ cyan_ (pretty k) <+> dim_ "=" <+> pretty v
+    (Nothing, Just _) ->
+      throwR "cannot specify value without key"
 
 handle Completion {completionShell} = liftIO $ do
   case T.toLower completionShell of

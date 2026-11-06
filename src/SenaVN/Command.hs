@@ -120,7 +120,10 @@ data Command
   | Info {infoCoreId :: !Text}
   | Status
   | Sync
-  | Config {configKey :: !Text, configValue :: !Text}
+  | Config
+      { configKey :: !(Maybe Text),
+        configValue :: !(Maybe Text)
+      }
   | Completion {completionShell :: !Text}
   deriving (Show)
 
@@ -372,8 +375,8 @@ commandParser =
     syncParser = pure Sync
     cfgParser =
       Config
-        <$> argument str (metavar "KEY")
-        <*> argument str (metavar "VALUE")
+        <$> optional (argument str (metavar "KEY" <> help "Config key"))
+        <*> optional (argument str (metavar "VALUE" <> help "Config value"))
     completionParser =
       Completion
         <$> argument str (metavar "SHELL" <> help "bash|zsh|fish")
