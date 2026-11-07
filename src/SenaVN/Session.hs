@@ -24,12 +24,11 @@ import Database.SQLite.Simple (Connection)
 import GHC.Generics (Generic)
 import qualified SenaVN.DB as DB
 import SenaVN.Types
+import SenaVN.Utils (getAppDir, safeRemoveFile)
 import System.Directory
   ( createDirectoryIfMissing,
     doesFileExist,
-    getHomeDirectory,
     listDirectory,
-    removeFile,
     renameFile,
   )
 import System.Environment (getExecutablePath)
@@ -53,8 +52,8 @@ instance ToJSON SessionData
 
 getSessionsDir :: IO FilePath
 getSessionsDir = do
-  home <- getHomeDirectory
-  let dir = home </> ".senavn" </> "sessions"
+  appDir <- getAppDir
+  let dir = appDir </> "sessions"
   createDirectoryIfMissing True dir
   pure dir
 
@@ -87,13 +86,6 @@ writeSession sd = do
       tmpPath = path <> ".tmp"
   encodeFile tmpPath sd
   renameFile tmpPath path
-
-safeRemoveFile :: FilePath -> IO ()
-safeRemoveFile p = do
-  res <- try (removeFile p) :: IO (Either IOException ())
-  case res of
-    Left _ -> pure ()
-    Right () -> pure ()
 
 deleteSession :: GameId -> IO ()
 deleteSession gid = do

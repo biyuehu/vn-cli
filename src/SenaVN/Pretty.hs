@@ -44,13 +44,14 @@ module SenaVN.Pretty
     linksList,
     statusDot,
     progressBar,
+    LibraryStats (..),
+    computeStats,
   )
 where
 
 import Control.Exception (SomeException, catch)
-import Data.List (intercalate, sortOn)
-import Data.Maybe (fromMaybe, isJust)
-import Data.Ord (Down (..))
+import Data.List (intercalate)
+import Data.Maybe (isJust)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Time (defaultTimeLocale, formatTime)
@@ -58,10 +59,10 @@ import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import GHC.Records (HasField)
 import Prettyprinter
 import Prettyprinter.Render.Terminal
+import SenaVN.Stats (LibraryStats (..), computeStats, effectivePlayed, totalPlayed)
 import SenaVN.Types
-import System.Environment (lookupEnv)
+import SenaVN.Utils (fmtSecStr, formatDate, getTermWidth, truncateText, wrapLine)
 import System.IO (hFlush, hIsTerminalDevice, stdout)
-import Text.Read (readMaybe)
 
 bold_ :: Doc AnsiStyle -> Doc AnsiStyle
 bold_ = annotate bold
@@ -83,10 +84,7 @@ dim_ = annotate (colorDull Black)
 
 fmtDate :: Int -> Doc AnsiStyle
 fmtDate 0 = dim_ "—"
-fmtDate ts =
-  pretty $
-    formatTime defaultTimeLocale "%Y-%m-%d" $
-      posixSecondsToUTCTime (fromIntegral ts)
+fmtDate ts = pretty (formatDate ts)
 
 fmtMinutes :: Minutes -> Doc AnsiStyle
 fmtMinutes 0 = dim_ "—"
@@ -94,13 +92,6 @@ fmtMinutes totalM =
   let h = totalM `div` 60
       mn = totalM `mod` 60
    in pretty $ if h > 0 then show h <> "h " <> show mn <> "m" else show mn <> "m"
-
-fmtSecStr :: Seconds -> String
-fmtSecStr 0 = "0m"
-fmtSecStr totalS =
-  let h = totalS `div` 3600
-      m = (totalS `mod` 3600) `div` 60
-   in if h > 0 then show h <> "h " <> show m <> "m" else show m <> "m"
 
 fmtSeconds :: Seconds -> Doc AnsiStyle
 fmtSeconds 0 = dim_ "—"
@@ -130,13 +121,6 @@ fmtTimeline tl
               else pretty (startDate <> " " <> startTime <> " → " <> endDate <> " " <> endTime)
        in dim_ "·" <+> timeRange <+> dim_ "·" <+> fmtSeconds tl.duration
 
-totalPlayed :: [PlayTimeline] -> Seconds
-totalPlayed = sum . map (.duration)
-
-effectivePlayed :: GameWithLocal -> Seconds
-effectivePlayed gwl =
-  totalPlayed gwl.game.playTimelines + fromMaybe 0 gwl.running
-
 ratingDoc :: Double -> Doc AnsiStyle
 ratingDoc 0 = dim_ "not rated"
 ratingDoc r =
@@ -147,20 +131,10 @@ ratingDoc r =
    in yellow_ (pretty stars) <+> dim_ (pretty scoreStr)
 
 truncated :: Int -> Text -> Doc AnsiStyle
-truncated n t
-  | T.length t <= n = pretty t
-  | otherwise = pretty (T.take (n - 1) t <> "…")
+truncated n t = pretty (truncateText n t)
 
 ruleW :: Int -> Doc AnsiStyle
 ruleW w = dim_ (pretty (replicate (max 20 w) '─'))
-
-wrapLine :: Int -> Text -> [Text]
-wrapLine maxW t
-  | T.null t = [""]
-  | T.length t <= maxW = [t]
-  | otherwise =
-      let (chunk, rest) = T.splitAt maxW t
-       in chunk : wrapLine maxW rest
 
 kv :: Int -> Text -> Doc AnsiStyle -> Doc AnsiStyle
 kv w k v =
@@ -448,40 +422,6 @@ prettyFetchResultsW w fs =
     <> line
     <> dim_ (pretty ("  " <> show (length fs) <> " result(s)  ·  use --order N for details"))
 
-data LibraryStats = LibraryStats
-  { totalGames :: !Int,
-    configuredGames :: !Int,
-    playedGames :: !Int,
-    unplayedGames :: !Int,
-    totalPlaytime :: !Seconds,
-    totalSessions :: !Int,
-    avgSessionSec :: !Seconds,
-    topPlayed :: ![(GameWithLocal, Seconds)]
-  }
-
-computeStats :: [GameWithLocal] -> LibraryStats
-computeStats games =
-  let tot = length games
-      configured = length $ filter (isJust . (.local)) games
-      withPlay = filter (\g -> effectivePlayed g > 0) games
-      playedCount = length withPlay
-      unplayedCount = tot - playedCount
-      totalSec = sum (map effectivePlayed games)
-      allSessions = concatMap (\g -> g.game.playTimelines) games
-      totSessions = length allSessions + length (filter (isJust . (.running)) games)
-      avgSec = if totSessions > 0 then totalSec `div` totSessions else 0
-      top5 = take 5 . sortOn (Down . snd) $ map (\g -> (g, effectivePlayed g)) withPlay
-   in LibraryStats
-        { totalGames = tot,
-          configuredGames = configured,
-          playedGames = playedCount,
-          unplayedGames = unplayedCount,
-          totalPlaytime = totalSec,
-          totalSessions = totSessions,
-          avgSessionSec = avgSec,
-          topPlayed = top5
-        }
-
 prettyLibraryStatsW :: Int -> [GameWithLocal] -> Doc AnsiStyle
 prettyLibraryStatsW w games =
   let s = computeStats games
@@ -555,16 +495,6 @@ prettyGameStatW w gwl =
     longestSess = if null timelines then 0 else maximum (map (.duration) timelines)
     avgSess = if totalSessCount > 0 then played `div` totalSessCount else 0
     firstPlay = if null timelines then 0 else minimum (map (.start) timelines)
-
-getTermWidth :: IO Int
-getTermWidth = do
-  mEnvCols <- lookupEnv "COLUMNS"
-  let parsedEnv = mEnvCols >>= readMaybe
-  pure $ case parsedEnv of
-    Just cols | cols > 0 -> clamp cols
-    _ -> 88
-  where
-    clamp c = max 60 (min 160 (c - 1))
 
 renderDoc :: Doc AnsiStyle -> IO ()
 renderDoc doc = do

@@ -43,16 +43,9 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import Database.SQLite.Simple
 import SenaVN.Types
-import System.Directory (createDirectoryIfMissing, getHomeDirectory)
+import SenaVN.Utils (getAppDir)
 import System.FilePath ((</>))
 import Text.Read (readMaybe)
-
-getAppDir :: IO FilePath
-getAppDir = do
-  home <- getHomeDirectory
-  let dir = home </> ".senavn"
-  createDirectoryIfMissing True dir
-  pure dir
 
 getDBPath :: IO FilePath
 getDBPath = (</> "sena.db") <$> getAppDir

@@ -9,12 +9,11 @@ import Data.Aeson (eitherDecode)
 import Data.Aeson.Encode.Pretty (encodePretty)
 import qualified Data.ByteString.Lazy as BL
 import Data.Char (isAlphaNum)
-import Data.List (sortOn, uncons)
+import Data.List (sortOn)
 import Data.Maybe (catMaybes, fromMaybe, isJust, listToMaybe)
 import Data.Ord (Down (..))
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Time.Clock.POSIX (getPOSIXTime)
 import Prettyprinter
 import Prettyprinter.Render.Terminal
 import SenaVN.Api (fetchFromVndb)
@@ -32,19 +31,15 @@ import Database.SQLite.Simple (Connection)
 import SenaVN.Pretty
 import qualified SenaVN.Session as Session
 import SenaVN.Types
-import SenaVN.Utils (randomOne)
+import SenaVN.Utils (maskSensitive, now, openDirectory, pickResult, randomOne)
 import System.Console.Haskeline (defaultSettings, getInputLine, runInputT)
 import System.Directory (createDirectoryIfMissing, doesDirectoryExist, doesFileExist, findExecutable)
 import System.Environment (lookupEnv)
 import System.Exit (exitFailure)
 import System.FilePath (normalise, takeDirectory, (</>))
-import System.Info (os)
 import System.IO (hClose)
 import System.IO.Temp (withSystemTempFile)
 import System.Process (CreateProcess (..), StdStream (..), callProcess, createProcess, proc)
-
-now :: IO Int
-now = round <$> getPOSIXTime
 
 requireGame :: GameId -> Romi GameCore
 requireGame gid = do
@@ -67,12 +62,6 @@ setupLocal gid (Just path) = do
           savePath = Nothing,
           guideFile = Nothing
         }
-
-pickResult :: Int -> [a] -> Maybe a
-pickResult _ [] = Nothing
-pickResult n xs
-  | n >= 1 && n <= length xs = Just (xs !! (n - 1))
-  | otherwise = fst <$> uncons xs
 
 applyFetch :: Bool -> GameCore -> FetchGameData -> GameCore
 applyFetch keepName g f =
@@ -691,19 +680,6 @@ handle Completion {completionShell} = liftIO $ do
     ShellZsh -> putStrLn "eval \"$(sena --zsh-completion-script sena)\""
     ShellFish -> putStrLn "sena --fish-completion-script sena | source"
 
-maskSensitive :: Text -> Text -> Text
-maskSensitive k v
-  | isSensitive k =
-      let len = T.length v
-       in if len <= 8
-            then "********"
-            else T.take 4 v <> "****" <> T.takeEnd 2 v
-  | otherwise = v
-  where
-    isSensitive s =
-      let lower = T.toLower s
-       in any (`T.isInfixOf` lower) ["token", "secret", "password"]
-
 validateConfigKey :: Text -> Either Text ()
 validateConfigKey k
   | T.null (T.strip k) = Left "config key cannot be empty"
@@ -792,12 +768,3 @@ openGameSave gwl = do
               else throwR (SavePathNotFound rawDir)
       liftIO $ openDirectory targetPath
       liftIO . ok $ dim_ "opened save directory →" <+> cyan_ (pretty (T.pack targetPath))
-
-openDirectory :: FilePath -> IO ()
-openDirectory dir = do
-  let (cmd, args) = case os of
-        "mingw32" -> ("explorer", [dir])
-        "darwin"  -> ("open", [dir])
-        _         -> ("xdg-open", [dir])
-  _ <- createProcess (proc cmd args)
-  pure ()
