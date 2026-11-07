@@ -3,6 +3,8 @@
 module SenaVN.Command
   ( Command (..),
     MetaOptions (..),
+    SortField (..),
+    ShellType (..),
     emptyMeta,
     hasMeta,
     commandParser,
@@ -10,12 +12,14 @@ module SenaVN.Command
 where
 
 import Control.Exception (SomeException, catch)
+import Data.Char (toLower)
 import Data.Maybe (isJust)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Database.SQLite.Simple (Only (..), close, open, query_)
 import Options.Applicative
 import qualified SenaVN.DB as DB
+import SenaVN.Types (GameId (..))
 import System.Directory (doesFileExist)
 
 gameIdCompleter :: Completer
@@ -35,6 +39,38 @@ fetchGameIds =
           pure (map (T.unpack . fromOnly) ids)
   )
     `catch` \(_ :: SomeException) -> pure []
+
+data SortField
+  = SortTitle
+  | SortLastPlay
+  | SortCreateDate
+  | SortReleaseDate
+  | SortRating
+  | SortPlayed
+  deriving (Show, Eq, Enum, Bounded)
+
+sortFieldReader :: ReadM SortField
+sortFieldReader = eitherReader $ \s -> case map toLower s of
+  "title" -> Right SortTitle
+  "lastplay" -> Right SortLastPlay
+  "createdate" -> Right SortCreateDate
+  "releasedate" -> Right SortReleaseDate
+  "rating" -> Right SortRating
+  "played" -> Right SortPlayed
+  other -> Left $ "unknown sort field '" ++ other ++ "', valid: title|lastPlay|createDate|releaseDate|rating|played"
+
+data ShellType
+  = ShellBash
+  | ShellZsh
+  | ShellFish
+  deriving (Show, Eq, Enum, Bounded)
+
+shellTypeReader :: ReadM ShellType
+shellTypeReader = eitherReader $ \s -> case map toLower s of
+  "bash" -> Right ShellBash
+  "zsh" -> Right ShellZsh
+  "fish" -> Right ShellFish
+  other -> Left $ "unsupported shell '" ++ other ++ "', valid: bash|zsh|fish"
 
 data MetaOptions = MetaOptions
   { metaVndbId :: !(Maybe Text),
@@ -61,7 +97,7 @@ hasMeta m =
 data Command
   = Add
       { addName :: !Text,
-        addCoreId :: !Text,
+        addCoreId :: !GameId,
         addPath :: !(Maybe Text),
         addNoFetch :: !Bool,
         addSkip :: !Bool,
@@ -70,7 +106,7 @@ data Command
         addMeta :: !MetaOptions
       }
   | Edit
-      { editCoreId :: !Text,
+      { editCoreId :: !GameId,
         editFetch :: !Bool,
         editApply :: !Bool,
         editOrder :: !Int,
@@ -78,12 +114,12 @@ data Command
         editMeta :: !MetaOptions
       }
   | Remove
-      { removeCoreId :: !Text,
+      { removeCoreId :: !GameId,
         removeHard :: !Bool
       }
   | Move
-      { moveOldId :: !Text,
-        moveNewId :: !Text
+      { moveOldId :: !GameId,
+        moveNewId :: !GameId
       }
   | Run
       { runTarget :: !(Maybe Text),
@@ -98,27 +134,27 @@ data Command
         fetchOrder :: !Int
       }
   | List
-      { listSort :: !Text,
+      { listSort :: !SortField,
         listReverse :: !Bool,
         listFilter :: !Text,
         listDetail :: !Bool
       }
   | Stats
-      { statsCoreIds :: ![Text],
+      { statsCoreIds :: ![GameId],
         statsFilter :: !Text
       }
   | Timeline
-      { tlCoreIds :: ![Text],
+      { tlCoreIds :: ![GameId],
         tlFilter :: !Text
       }
   | Use
-      { useCoreId :: !Text,
+      { useCoreId :: !GameId,
         useExePath :: !Text,
         useSavePath :: !(Maybe Text),
         useGuide :: !(Maybe Text)
       }
   | Info
-      { infoCoreId :: !Text,
+      { infoCoreId :: !GameId,
         infoGuide :: !Bool,
         infoSave :: !Bool
       }
@@ -130,7 +166,7 @@ data Command
         configUnset :: !(Maybe Text),
         configEdit :: !Bool
       }
-  | Completion {completionShell :: !Text}
+  | Completion {completionShell :: !ShellType}
   deriving (Show)
 
 metaParser :: Parser MetaOptions
@@ -313,12 +349,12 @@ commandParser =
     listParser =
       List
         <$> option
-          str
+          sortFieldReader
           ( long "sort"
               <> short 's'
               <> metavar "FIELD"
-              <> value "title"
-              <> help "title|lastPlay|createDate|releaseDate|rating"
+              <> value SortTitle
+              <> help "title|lastPlay|createDate|releaseDate|rating|played"
           )
         <*> switch (long "reverse" <> short 'r' <> help "Reverse sort order")
         <*> option
@@ -391,4 +427,4 @@ commandParser =
         <*> switch (long "edit" <> short 'e' <> help "Edit configuration in $EDITOR")
     completionParser =
       Completion
-        <$> argument str (metavar "SHELL" <> help "bash|zsh|fish")
+        <$> argument shellTypeReader (metavar "SHELL" <> help "bash|zsh|fish")

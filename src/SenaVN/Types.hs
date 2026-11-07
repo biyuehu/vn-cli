@@ -1,15 +1,37 @@
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+
 module SenaVN.Types where
 
 import Data.Aeson (FromJSON, ToJSON)
+import Data.String (IsString (..))
 import Data.Text (Text)
+import Database.SQLite.Simple.FromField (FromField (..))
+import Database.SQLite.Simple.ToField (ToField (..))
 import GHC.Generics (Generic)
 
 newtype GameId = GameId {unGameId :: Text}
-  deriving (Show, Eq, Ord, Generic, FromJSON, ToJSON)
+  deriving stock (Show, Eq, Ord, Generic)
+  deriving newtype (FromJSON, ToJSON)
+
+instance IsString GameId where
+  fromString = GameId . fromString
+
+instance FromField GameId where
+  fromField f = GameId <$> fromField f
+
+instance ToField GameId where
+  toField (GameId gid) = toField gid
 
 type Seconds = Int
 
 type Minutes = Int
+
+minutesToSeconds :: Minutes -> Seconds
+minutesToSeconds m = m * 60
+
+secondsToMinutes :: Seconds -> Minutes
+secondsToMinutes s = s `div` 60
 
 data PlayTimeline = PlayTimeline
   { start :: !Int,
@@ -55,7 +77,7 @@ data LocalPath = LocalPath
 data GameWithLocal = GameWithLocal
   { game :: !GameCore,
     local :: !(Maybe LocalPath),
-    running :: !(Maybe Int)
+    running :: !(Maybe Seconds)
   }
   deriving (Show, Eq, Generic, FromJSON, ToJSON)
 

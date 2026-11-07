@@ -17,8 +17,8 @@ import Control.Concurrent (threadDelay)
 import Control.Exception (IOException, try)
 import Control.Monad (forM, forM_, unless, when)
 import Data.Aeson (FromJSON, ToJSON, eitherDecodeFileStrict, encodeFile)
+import Data.List (isSuffixOf)
 import Data.Maybe (catMaybes)
-import Data.Text (Text)
 import qualified Data.Text as T
 import Database.SQLite.Simple (Connection)
 import GHC.Generics (Generic)
@@ -39,10 +39,10 @@ import qualified System.Info as Info
 import System.Process (getCurrentPid, rawSystem)
 
 data SessionData = SessionData
-  { gameId :: !Text,
+  { gameId :: !GameId,
     startUnix :: !Int,
     lastHeartbeatUnix :: !Int,
-    activeSeconds :: !Int,
+    activeSeconds :: !Seconds,
     guardPid :: !Int
   }
   deriving (Show, Generic)
@@ -58,8 +58,8 @@ getSessionsDir = do
   createDirectoryIfMissing True dir
   pure dir
 
-sessionFile :: FilePath -> Text -> FilePath
-sessionFile dir gid = dir </> T.unpack gid <> ".session.json"
+sessionFile :: FilePath -> GameId -> FilePath
+sessionFile dir (GameId gid) = dir </> T.unpack gid <> ".session.json"
 
 readSafe :: FilePath -> Int -> IO (Maybe SessionData)
 readSafe _ 0 = pure Nothing
@@ -71,7 +71,7 @@ readSafe p retries = do
       threadDelay 30000
       readSafe p (retries - 1)
 
-readSession :: Text -> IO (Maybe SessionData)
+readSession :: GameId -> IO (Maybe SessionData)
 readSession gid = do
   dir <- getSessionsDir
   let path = sessionFile dir gid
@@ -95,16 +95,13 @@ safeRemoveFile p = do
     Left _ -> pure ()
     Right () -> pure ()
 
-isSuffixOf :: String -> String -> Bool
-isSuffixOf suf s = drop (length s - length suf) s == suf
-
-deleteSession :: Text -> IO ()
+deleteSession :: GameId -> IO ()
 deleteSession gid = do
   dir <- getSessionsDir
   let path = sessionFile dir gid
   safeRemoveFile path
 
-renameSession :: Text -> Text -> IO ()
+renameSession :: GameId -> GameId -> IO ()
 renameSession oldId newId = do
   dir <- getSessionsDir
   let oldPath = sessionFile dir oldId

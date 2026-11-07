@@ -90,16 +90,16 @@ fmtDate ts =
 
 fmtMinutes :: Minutes -> Doc AnsiStyle
 fmtMinutes 0 = dim_ "—"
-fmtMinutes m =
-  let h = m `div` 60
-      mn = m `mod` 60
+fmtMinutes totalM =
+  let h = totalM `div` 60
+      mn = totalM `mod` 60
    in pretty $ if h > 0 then show h <> "h " <> show mn <> "m" else show mn <> "m"
 
 fmtSecStr :: Seconds -> String
 fmtSecStr 0 = "0m"
-fmtSecStr s =
-  let h = s `div` 3600
-      m = (s `mod` 3600) `div` 60
+fmtSecStr totalS =
+  let h = totalS `div` 3600
+      m = (totalS `mod` 3600) `div` 60
    in if h > 0 then show h <> "h " <> show m <> "m" else show m <> "m"
 
 fmtSeconds :: Seconds -> Doc AnsiStyle
@@ -185,7 +185,7 @@ progressBar :: Int -> Seconds -> Minutes -> Doc AnsiStyle
 progressBar barWidth playedSec expectedMin
   | expectedMin <= 0 || playedSec <= 0 = dim_ "—"
   | otherwise =
-      let expectedSec = expectedMin * 60
+      let expectedSec = minutesToSeconds expectedMin
           pct = (playedSec * 100) `div` expectedSec
           clampedPct = min 100 (max 0 pct)
           filled = min barWidth (round ((fromIntegral (clampedPct * barWidth) / 100.0) :: Double) :: Int)
@@ -201,7 +201,7 @@ statusDot :: GameWithLocal -> Doc AnsiStyle
 statusDot gwl
   | isJust gwl.running = annotate (color Green <> bold) "▶"
   | null gwl.game.playTimelines = dim_ "○"
-  | effectivePlayed gwl >= fromIntegral (gwl.game.expectedPlayTime * 60) && gwl.game.expectedPlayTime > 0 =
+  | effectivePlayed gwl >= minutesToSeconds gwl.game.expectedPlayTime && gwl.game.expectedPlayTime > 0 =
       annotate (color Cyan) "✔"
   | otherwise = green_ "●"
 
@@ -330,7 +330,7 @@ prettyGameDetailW w gwl =
       Just liveSec -> annotate (color Green <> bold) "▶ running" <+> dim_ ("(session: " <> pretty (fmtSecStr liveSec) <> ")")
       Nothing
         | null gwl.game.playTimelines -> dim_ "○ unplayed"
-        | played >= fromIntegral (gwl.game.expectedPlayTime * 60) && gwl.game.expectedPlayTime > 0 ->
+        | played >= minutesToSeconds gwl.game.expectedPlayTime && gwl.game.expectedPlayTime > 0 ->
             cyan_ "✔ finished"
         | otherwise -> green_ "● in library"
 

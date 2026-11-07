@@ -1,3 +1,4 @@
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -23,6 +24,11 @@ module SenaVN.DB
     setConfig,
     deleteConfig,
     setAllConfigs,
+    ConfigKey (..),
+    configKeyName,
+    ConfigValue (..),
+    getTypedConfig,
+    setTypedConfig,
   )
 where
 
@@ -39,6 +45,7 @@ import Database.SQLite.Simple
 import SenaVN.Types
 import System.Directory (createDirectoryIfMissing, getHomeDirectory)
 import System.FilePath ((</>))
+import Text.Read (readMaybe)
 
 getAppDir :: IO FilePath
 getAppDir = do
@@ -107,11 +114,11 @@ encodeJson :: (ToJSON a) => a -> Text
 encodeJson val = TE.decodeUtf8 (BL.toStrict (encode val))
 
 data GameRow = GameRow
-  { grId :: !Text,
+  { grId :: !GameId,
     grVndbId :: !(Maybe Text),
     grTitle :: !Text,
     grDesc :: !Text,
-    grExpected :: !Int,
+    grExpected :: !Minutes,
     grLastPlay :: !Int,
     grCreate :: !Int,
     grUpdate :: !Int,
@@ -144,7 +151,7 @@ instance FromRow GameRow where
       <*> field
 
 data LocalRow = LocalRow
-  { lrGameId :: !Text,
+  { lrGameId :: !GameId,
     lrProgram :: !Text,
     lrSave :: !(Maybe Text),
     lrGuide :: !(Maybe Text)
@@ -159,10 +166,10 @@ gameSelectCols =
   \last_play,create_date,update_date,release_date,rating,developer,\
   \alias,tags,images,links FROM games"
 
-buildGameCoreFromRow :: Map.Map Text [PlayTimeline] -> GameRow -> GameCore
+buildGameCoreFromRow :: Map.Map GameId [PlayTimeline] -> GameRow -> GameCore
 buildGameCoreFromRow sessMap r =
   GameCore
-    { coreId = GameId r.grId,
+    { coreId = r.grId,
       vndbId = r.grVndbId,
       title = r.grTitle,
       description = r.grDesc,
@@ -188,20 +195,20 @@ buildGameCore conn r = do
 fromLocalRow :: LocalRow -> LocalPath
 fromLocalRow lr =
   LocalPath
-    { localId = GameId lr.lrGameId,
+    { localId = lr.lrGameId,
       programFile = lr.lrProgram,
       savePath = lr.lrSave,
       guideFile = lr.lrGuide
     }
 
-getGame :: Connection -> Text -> IO (Maybe GameCore)
+getGame :: Connection -> GameId -> IO (Maybe GameCore)
 getGame conn gid = do
   rows <- query conn (gameSelectCols <> " WHERE id=?") (Only gid) :: IO [GameRow]
   case rows of
     [] -> pure Nothing
     (r : _) -> Just <$> buildGameCore conn r
 
-getGameWithLocal :: Connection -> Text -> IO (Maybe GameWithLocal)
+getGameWithLocal :: Connection -> GameId -> IO (Maybe GameWithLocal)
 getGameWithLocal conn gid = do
   mg <- getGame conn gid
   case mg of
@@ -217,7 +224,7 @@ getAllGames conn = do
     query_
       conn
       "SELECT game_id,start_time,end_time,duration FROM play_sessions ORDER BY start_time" ::
-      IO [(Text, Int, Int, Int)]
+      IO [(GameId, Int, Int, Seconds)]
   let sessMap =
         Map.fromListWith
           (flip (++))
@@ -231,7 +238,7 @@ getAllGamesWithLocal conn = do
     query_
       conn
       "SELECT game_id,start_time,end_time,duration FROM play_sessions ORDER BY start_time" ::
-      IO [(Text, Int, Int, Int)]
+      IO [(GameId, Int, Int, Seconds)]
   localRows <-
     query_
       conn
@@ -310,13 +317,13 @@ updateGame conn g = withTransaction conn $ do
            )
     )
 
-deleteGame :: Connection -> Text -> IO ()
+deleteGame :: Connection -> GameId -> IO ()
 deleteGame conn gid =
   execute conn "DELETE FROM games WHERE id=?" (Only gid)
 
-getLocalPath :: Connection -> Text -> IO (Maybe LocalPath)
+getLocalPath :: Connection -> GameId -> IO (Maybe LocalPath)
 getLocalPath conn gid = do
-  rows <- query conn "SELECT * FROM local_paths WHERE game_id=?" (Only gid) :: IO [LocalRow]
+  rows <- query conn "SELECT game_id,program_file,save_path,guide_file FROM local_paths WHERE game_id=?" (Only gid) :: IO [LocalRow]
   pure $ fromLocalRow <$> listToMaybe rows
 
 upsertLocalPath :: Connection -> LocalPath -> IO ()
@@ -329,12 +336,12 @@ upsertLocalPath conn lp =
     \   program_file=excluded.program_file,\
     \   save_path=excluded.save_path,\
     \   guide_file=excluded.guide_file"
-    (lp.localId.unGameId, lp.programFile, lp.savePath, lp.guideFile)
+    (lp.localId, lp.programFile, lp.savePath, lp.guideFile)
 
-sessionId :: Text -> Int -> Text
-sessionId gid s = gid <> "-" <> T.pack (show s)
+sessionId :: GameId -> Int -> Text
+sessionId (GameId gid) s = gid <> "-" <> T.pack (show s)
 
-upsertPlaySession :: Connection -> Text -> PlayTimeline -> IO ()
+upsertPlaySession :: Connection -> GameId -> PlayTimeline -> IO ()
 upsertPlaySession conn gid tl =
   execute
     conn
@@ -345,7 +352,7 @@ upsertPlaySession conn gid tl =
     \   duration=excluded.duration"
     (sessionId gid tl.start, gid, tl.start, tl.end, tl.duration)
 
-getPlaySessions :: Connection -> Text -> IO [PlayTimeline]
+getPlaySessions :: Connection -> GameId -> IO [PlayTimeline]
 getPlaySessions conn gid = do
   rows <-
     query
@@ -353,17 +360,17 @@ getPlaySessions conn gid = do
       "SELECT start_time,end_time,duration FROM play_sessions\
       \ WHERE game_id=? ORDER BY start_time"
       (Only gid) ::
-      IO [(Int, Int, Int)]
+      IO [(Int, Int, Seconds)]
   pure $ map (\(s, e, d) -> PlayTimeline {start = s, end = e, duration = d}) rows
 
-updateLastPlay :: Connection -> Text -> Int -> IO ()
+updateLastPlay :: Connection -> GameId -> Int -> IO ()
 updateLastPlay conn gid ts =
   execute
     conn
     "UPDATE games SET last_play=? WHERE id=? AND last_play<?"
     (ts, gid, ts)
 
-renameGame :: Connection -> Text -> Text -> Int -> IO ()
+renameGame :: Connection -> GameId -> GameId -> Int -> IO ()
 renameGame conn oldId newId ts = withTransaction conn $ do
   execute_ conn "PRAGMA defer_foreign_keys = ON"
   execute conn "UPDATE games SET id=?, update_date=? WHERE id=?" (newId, ts, oldId)
@@ -403,3 +410,42 @@ setAllConfigs conn kvs = withTransaction conn $ do
   execute_ conn "DELETE FROM configs"
   forM_ kvs $ \(k, v) ->
     execute conn "INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)" (k, v)
+
+data ConfigKey a where
+  CoreEditor :: ConfigKey Text
+  FetchProxy :: ConfigKey Text
+
+configKeyName :: ConfigKey a -> Text
+configKeyName CoreEditor = "core.editor"
+configKeyName FetchProxy = "fetch.proxy"
+
+class ConfigValue a where
+  serializeValue :: a -> Text
+  deserializeValue :: Text -> Maybe a
+
+instance ConfigValue Text where
+  serializeValue = id
+  deserializeValue = Just
+
+instance ConfigValue Int where
+  serializeValue = T.pack . show
+  deserializeValue = readMaybe . T.unpack
+
+instance ConfigValue Bool where
+  serializeValue True = "true"
+  serializeValue False = "false"
+  deserializeValue s
+    | lower `elem` ["true", "1", "yes", "on"] = Just True
+    | lower `elem` ["false", "0", "no", "off"] = Just False
+    | otherwise = Nothing
+    where
+      lower = T.toLower (T.strip s)
+
+getTypedConfig :: (ConfigValue a) => Connection -> ConfigKey a -> IO (Maybe a)
+getTypedConfig conn key = do
+  mRaw <- getConfig conn (configKeyName key)
+  pure (mRaw >>= deserializeValue)
+
+setTypedConfig :: (ConfigValue a) => Connection -> ConfigKey a -> a -> IO ()
+setTypedConfig conn key val =
+  setConfig conn (configKeyName key) (serializeValue val)

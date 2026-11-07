@@ -19,7 +19,13 @@ import Prettyprinter
 import Prettyprinter.Render.Terminal
 import SenaVN.Api (fetchFromVndb)
 import SenaVN.Command
-import SenaVN.Core (Romi, askConn, throwR)
+  ( Command (..),
+    MetaOptions (..),
+    ShellType (..),
+    SortField (..),
+    hasMeta,
+  )
+import SenaVN.Core (Romi, SenaError (..), askConn, throwR)
 import qualified SenaVN.DB as DB
 import qualified Data.Text.IO as TIO
 import Database.SQLite.Simple (Connection)
@@ -40,15 +46,15 @@ import System.Process (CreateProcess (..), StdStream (..), callProcess, createPr
 now :: IO Int
 now = round <$> getPOSIXTime
 
-requireGame :: Text -> Romi GameCore
+requireGame :: GameId -> Romi GameCore
 requireGame gid = do
   conn <- askConn
   mg <- liftIO $ DB.getGame conn gid
   case mg of
-    Nothing -> throwR ("game not found: " <> gid)
+    Nothing -> throwR (GameNotFound gid)
     Just g -> pure g
 
-setupLocal :: Text -> Maybe Text -> Romi ()
+setupLocal :: GameId -> Maybe Text -> Romi ()
 setupLocal _ Nothing = pure ()
 setupLocal gid (Just path) = do
   conn <- askConn
@@ -56,7 +62,7 @@ setupLocal gid (Just path) = do
     DB.upsertLocalPath
       conn
       LocalPath
-        { localId = GameId gid,
+        { localId = gid,
           programFile = path,
           savePath = Nothing,
           guideFile = Nothing
@@ -96,10 +102,10 @@ applyMeta g m =
       tags = if null m.metaTags then g.tags else m.metaTags
     }
 
-emptyGameCore :: Text -> Text -> Int -> GameCore
+emptyGameCore :: GameId -> Text -> Int -> GameCore
 emptyGameCore gid name ts =
   GameCore
-    { coreId = GameId gid,
+    { coreId = gid,
       vndbId = Nothing,
       title = name,
       alias = [],
@@ -119,7 +125,7 @@ emptyGameCore gid name ts =
 
 findEditor :: Connection -> IO (Maybe FilePath)
 findEditor conn = do
-  mCfgEditor <- DB.getConfig conn "core.editor"
+  mCfgEditor <- DB.getTypedConfig conn DB.CoreEditor
   case mCfgEditor of
     Just ed | not (T.null (T.strip ed)) -> pure (Just (T.unpack (T.strip ed)))
     _ -> do
@@ -141,8 +147,7 @@ openEditor g = do
   conn <- askConn
   mEditor <- liftIO $ findEditor conn
   editor <- case mEditor of
-    Nothing ->
-      throwR "no editor found: please configure core.editor, set $VISUAL or $EDITOR, or install nvim/vim/nano/vi"
+    Nothing -> throwR EditorNotFound
     Just ed -> pure ed
   raw <- liftIO $
     withSystemTempFile "sena-edit-.json" $ \path h -> do
@@ -154,7 +159,7 @@ openEditor g = do
       callProcess prog (args ++ [path])
       BL.readFile path
   case eitherDecode raw of
-    Left err -> throwR ("parse error after editor: " <> T.pack err)
+    Left err -> throwR (JsonParseError (T.pack err))
     Right g' ->
       pure
         g'
@@ -163,18 +168,18 @@ openEditor g = do
             playTimelines = g.playTimelines
           }
 
-spawnDaemon :: Text -> Text -> Text -> IO ()
-spawnDaemon gameId gameName exePath = do
+spawnDaemon :: GameId -> Text -> Text -> IO ()
+spawnDaemon (GameId gid) gameName exePath = do
   sessDir <- Session.getSessionsDir
   daemonExe <- Session.getDaemonPath
-  let sessionFile = sessDir </> T.unpack gameId <> ".session.json"
+  let sessionFile = sessDir </> T.unpack gid <> ".session.json"
   _ <-
     createProcess
       ( proc
           daemonExe
           [ "--run",
             "--game-id",
-            T.unpack gameId,
+            T.unpack gid,
             "--game-name",
             T.unpack gameName,
             "--exe-path",
@@ -312,7 +317,7 @@ attachRunningSessions games = do
   pure $
     map
       ( \gwl ->
-          case lookup gwl.game.coreId.unGameId liveSessions of
+          case lookup gwl.game.coreId liveSessions of
             Just activeSec -> gwl {running = Just activeSec}
             Nothing -> gwl
       )
@@ -322,7 +327,7 @@ handle :: Command -> Romi ()
 handle Add {addName, addCoreId, addPath, addNoFetch, addSkip, addOrder, addKeepName, addMeta} = do
   conn <- askConn
   existing <- liftIO $ DB.getGame conn addCoreId
-  when (isJust existing) $ throwR ("id already exists: " <> addCoreId)
+  when (isJust existing) $ throwR (GameAlreadyExists addCoreId)
   ts <- liftIO now
   let base = emptyGameCore addCoreId addName ts
 
@@ -336,13 +341,13 @@ handle Add {addName, addCoreId, addPath, addNoFetch, addSkip, addOrder, addKeepN
               then pure base
               else openEditor base
           else do
-            mProxy <- liftIO $ DB.getConfig conn "fetch.proxy"
+            mProxy <- liftIO $ DB.getTypedConfig conn DB.FetchProxy
             results <- liftIO $ fetchFromVndb mProxy (VndbName addName)
-            when (null results) $ throwR "no VNDB results found"
+            when (null results) $ throwR (VndbNoResults addName)
             selected <-
               if addOrder /= 1 || addSkip
                 then case pickResult addOrder results of
-                  Nothing -> throwR "no VNDB results found"
+                  Nothing -> throwR (VndbNoResults addName)
                   Just fd -> pure fd
                 else case results of
                   [single] -> pure single
@@ -367,13 +372,13 @@ handle Edit {editCoreId, editFetch, editApply, editOrder, editKeepName, editMeta
       else
         if editFetch
           then do
-            mProxy <- liftIO $ DB.getConfig conn "fetch.proxy"
+            mProxy <- liftIO $ DB.getTypedConfig conn DB.FetchProxy
             results <- liftIO $ fetchFromVndb mProxy (VndbName g.title)
-            when (null results) $ throwR "no VNDB results found"
+            when (null results) $ throwR (VndbNoResults g.title)
             selected <-
               if editOrder /= 1 || editApply
                 then case pickResult editOrder results of
-                  Nothing -> throwR "no VNDB results found"
+                  Nothing -> throwR (VndbNoResults g.title)
                   Just fd -> pure fd
                 else case results of
                   [single] -> pure single
@@ -402,6 +407,7 @@ handle Remove {removeCoreId, removeHard} = do
     then liftIO $ printLn (annotate (color Yellow) "!" <+> dim_ "operation cancelled.")
     else liftIO $ do
       DB.deleteGame conn removeCoreId
+      Session.deleteSession removeCoreId
       ok $
         bold_ (white_ (pretty g.title))
           <+> dim_ "removed."
@@ -410,21 +416,21 @@ handle Remove {removeCoreId, removeHard} = do
 handle Move {moveOldId, moveNewId} = do
   conn <- askConn
   when (moveOldId == moveNewId) $
-    throwR "new ID must be different from old ID"
-  when (T.null (T.strip moveNewId)) $
-    throwR "new ID cannot be empty"
-  unless (T.all (\c -> isAlphaNum c || c == '-' || c == '_') moveNewId) $
-    throwR "new ID must contain only letters, numbers, hyphens, or underscores"
+    throwR (InvalidNewGameId moveNewId "new ID must be different from old ID")
+  when (T.null (T.strip moveNewId.unGameId)) $
+    throwR (InvalidNewGameId moveNewId "new ID cannot be empty")
+  unless (T.all (\c -> isAlphaNum c || c == '-' || c == '_') moveNewId.unGameId) $
+    throwR (InvalidNewGameId moveNewId "new ID must contain only letters, numbers, hyphens, or underscores")
   g <- requireGame moveOldId
   existingNew <- liftIO $ DB.getGame conn moveNewId
   when (isJust existingNew) $
-    throwR ("game already exists with ID: " <> moveNewId)
+    throwR (GameAlreadyExists moveNewId)
   mRunning <- liftIO $ Session.readSession moveOldId
   case mRunning of
     Just sess -> do
       alive <- liftIO $ Session.isPidAlive sess.guardPid
       when alive $
-        throwR ("cannot rename game while it is running (PID: " <> T.pack (show sess.guardPid) <> ")")
+        throwR (GameAlreadyRunning moveOldId g.title sess.guardPid)
     Nothing -> pure ()
   liftIO $ Session.reconcileSessions conn
   ts <- liftIO now
@@ -434,20 +440,20 @@ handle Move {moveOldId, moveNewId} = do
     ok $
       bold_ (white_ (pretty g.title))
         <+> dim_ "renamed:"
-        <+> annotate (color Magenta) (pretty ("#" <> moveOldId))
+        <+> annotate (color Magenta) (pretty ("#" <> moveOldId.unGameId))
         <+> dim_ "→"
-        <+> annotate (color Cyan <> bold) (pretty ("#" <> moveNewId))
+        <+> annotate (color Cyan <> bold) (pretty ("#" <> moveNewId.unGameId))
 
 handle Run {runTarget, runSkip, runRandom, runRecent, runLast, runFilter} = do
   conn <- askConn
   let activeFlags = length $ filter Prelude.id [isJust runTarget, runRandom, runRecent, runLast]
   when (activeFlags > 1) $
-    throwR "only one of <id|name> / --random / --recent / --last can be specified"
+    throwR ConflictingRunFlags
 
   liftIO $ Session.reconcileSessions conn
 
   allGames <- liftIO $ DB.getAllGames conn
-  when (null allGames) $ throwR "library is empty"
+  when (null allGames) $ throwR EmptyLibrary
 
   let matchesFilter :: GameCore -> Bool
       matchesFilter g = case runFilter of
@@ -459,32 +465,32 @@ handle Run {runTarget, runSkip, runRandom, runRecent, runLast, runFilter} = do
                 || any (\t -> fltLower `T.isInfixOf` T.toLower t) g.tags
                 || fltLower `T.isInfixOf` T.toLower g.developer
       games = filter matchesFilter allGames
-  when (null games) $ throwR "no games match the specified filter"
+  when (null games) $ throwR (NoGamesMatchingFilter runFilter)
 
   g <- case runTarget of
     Nothing
       | runRandom ->
-          liftIO (randomOne games) >>= maybe (throwR "no games available matching filter") pure
+          liftIO (randomOne games) >>= maybe (throwR (NoGamesMatchingFilter runFilter)) pure
       | runRecent ->
           case sortOn (Down . (.lastPlay)) (filter (\x -> x.lastPlay > 0) games) of
-            [] -> throwR "no games played yet (or none match filter)"
+            [] -> throwR NoGamesPlayedYet
             (x : _) -> pure x
       | runLast ->
           case sortOn (Down . (.createDate)) games of
-            [] -> throwR "no games found matching filter"
+            [] -> throwR (NoGamesMatchingFilter runFilter)
             (x : _) -> pure x
       | isJust runFilter ->
-          liftIO (randomOne games) >>= maybe (throwR "no games available matching filter") pure
+          liftIO (randomOne games) >>= maybe (throwR (NoGamesMatchingFilter runFilter)) pure
       | otherwise ->
-          throwR "specify a game ID/name or use --random / --recent / --last / --filter"
+          throwR MissingRunTarget
 
     Just target -> do
-      mExact <- liftIO $ DB.getGame conn target
+      mExact <- liftIO $ DB.getGame conn (GameId target)
       case mExact of
         Just exactGame -> pure exactGame
         Nothing ->
           if runSkip
-            then throwR ("game not found with exact ID: " <> target)
+            then throwR (GameNotFound (GameId target))
             else do
               allWithLocal <- liftIO $ DB.getAllGamesWithLocal conn
               let configured = filter (isJust . (.local)) allWithLocal
@@ -497,40 +503,23 @@ handle Run {runTarget, runSkip, runRandom, runRecent, runLast, runFilter} = do
                       )
                       configured
               case matches of
-                [] ->
-                  throwR $
-                    "no configured game found matching '"
-                      <> target
-                      <> "'. Check with 'sena list' or configure with 'sena use <id> <exe>'."
+                [] -> throwR (GameTargetNotFound target)
                 [single] -> pure single.game
                 multiple -> liftIO $ selectGameInteractive target multiple
 
-  mLocal <- liftIO $ DB.getLocalPath conn g.coreId.unGameId
+  mLocal <- liftIO $ DB.getLocalPath conn g.coreId
   case mLocal of
-    Nothing ->
-      throwR $
-        "no exe configured for "
-          <> g.title
-          <> " — configure first with: sena use "
-          <> g.coreId.unGameId
-          <> " <path>"
+    Nothing -> throwR (ExeNotConfigured g.coreId g.title)
     Just lp -> do
-      mSess <- liftIO $ Session.readSession g.coreId.unGameId
+      mSess <- liftIO $ Session.readSession g.coreId
       case mSess of
         Just sess -> do
           alive <- liftIO $ Session.isPidAlive sess.guardPid
           when alive $
-            throwR $
-              "game is already running: "
-                <> g.title
-                <> " (#"
-                <> g.coreId.unGameId
-                <> ", PID: "
-                <> T.pack (show sess.guardPid)
-                <> ")"
+            throwR (GameAlreadyRunning g.coreId g.title sess.guardPid)
         Nothing -> pure ()
       liftIO $ do
-        spawnDaemon g.coreId.unGameId g.title lp.programFile
+        spawnDaemon g.coreId g.title lp.programFile
         printLn $
           annotate (color Green <> bold) "▶"
             <+> bold_ (white_ (pretty g.title))
@@ -540,39 +529,29 @@ handle Run {runTarget, runSkip, runRandom, runRecent, runLast, runFilter} = do
 
 handle Fetch {fetchName, fetchOrder} = do
   conn <- askConn
-  mProxy <- liftIO $ DB.getConfig conn "fetch.proxy"
+  mProxy <- liftIO $ DB.getTypedConfig conn DB.FetchProxy
   results <- liftIO $ fetchFromVndb mProxy (VndbName fetchName)
-  when (null results) $ throwR "no results found"
+  when (null results) $ throwR (VndbNoResults fetchName)
   case fetchOrder of
     0 -> liftIO $ printFetchResults results
     n
       | n >= 1 && n <= length results ->
           liftIO $ printFetchResult n (results !! (n - 1))
       | otherwise ->
-          throwR $
-            "invalid --order "
-              <> T.pack (show n)
-              <> ", got "
-              <> T.pack (show (length results))
-              <> " results"
+          throwR (VndbInvalidOrder n (length results))
 
 handle List {listSort, listReverse, listFilter = _, listDetail} = do
   conn <- askConn
   liftIO $ Session.reconcileSessions conn
   rawGames <- liftIO $ DB.getAllGamesWithLocal conn
   games <- liftIO $ attachRunningSessions rawGames
-  sorted <- case listSort of
-    "title" -> pure $ sortOn (\g -> g.game.title) games
-    "lastPlay" -> pure $ sortOn (\g -> g.game.lastPlay) games
-    "createDate" -> pure $ sortOn (\g -> g.game.createDate) games
-    "releaseDate" -> pure $ sortOn (\g -> g.game.releaseDate) games
-    "rating" -> pure $ sortOn (\g -> g.game.rating) games
-    "played" -> pure $ sortOn effectivePlayed games
-    other ->
-      throwR $
-        "unknown sort field: "
-          <> other
-          <> "  valid: title|lastPlay|createDate|releaseDate|rating|played"
+  let sorted = case listSort of
+        SortTitle -> sortOn (\g -> g.game.title) games
+        SortLastPlay -> sortOn (\g -> g.game.lastPlay) games
+        SortCreateDate -> sortOn (\g -> g.game.createDate) games
+        SortReleaseDate -> sortOn (\g -> g.game.releaseDate) games
+        SortRating -> sortOn (\g -> g.game.rating) games
+        SortPlayed -> sortOn effectivePlayed games
   let ordered = if listReverse then reverse sorted else sorted
   liftIO $
     if listDetail
@@ -587,8 +566,8 @@ handle Stats {statsCoreIds, statsFilter = _} = do
   if null statsCoreIds
     then liftIO $ printLibraryStats allGames
     else do
-      let targets = filter (\g -> g.game.coreId.unGameId `elem` statsCoreIds) allGames
-      when (null targets) $ throwR "no matching games found"
+      let targets = filter (\g -> g.game.coreId `elem` statsCoreIds) allGames
+      when (null targets) $ throwR (NoMatchingGamesFound statsCoreIds)
       liftIO $ forM_ targets printGameStat
 
 handle Timeline {tlCoreIds, tlFilter = _} = do
@@ -598,8 +577,8 @@ handle Timeline {tlCoreIds, tlFilter = _} = do
   let targets =
         if null tlCoreIds
           then all'
-          else filter (\g -> g.coreId.unGameId `elem` tlCoreIds) all'
-  when (null targets) $ throwR "no matching games"
+          else filter (\g -> g.coreId `elem` tlCoreIds) all'
+  when (null targets) $ throwR (NoMatchingGamesFound tlCoreIds)
   liftIO $ forM_ targets $ \g ->
     render $
       vsep
@@ -619,14 +598,14 @@ handle Use {useCoreId, useExePath, useSavePath, useGuide} = do
     DB.upsertLocalPath
       conn
       LocalPath
-        { localId = GameId useCoreId,
+        { localId = useCoreId,
           programFile = useExePath,
           savePath = useSavePath,
           guideFile = useGuide
         }
     ok $
       bold_ (white_ (pretty g.title))
-        <+> annotate (color Magenta) (pretty ("(#" <> useCoreId <> ")"))
+        <+> annotate (color Magenta) (pretty ("(#" <> useCoreId.unGameId <> ")"))
         <+> dim_ "linked →"
         <+> cyan_ (pretty useExePath)
 
@@ -635,7 +614,7 @@ handle Info {infoCoreId, infoGuide, infoSave} = do
   liftIO $ Session.reconcileSessions conn
   mgwl <- liftIO $ DB.getGameWithLocal conn infoCoreId
   case mgwl of
-    Nothing -> throwR ("game not found: " <> infoCoreId)
+    Nothing -> throwR (GameNotFound infoCoreId)
     Just gwl -> do
       if infoGuide || infoSave
         then do
@@ -657,8 +636,8 @@ handle Status = do
       alive <- Session.isPidAlive s.guardPid
       mGame <- DB.getGame conn s.gameId
       let titleDoc = case mGame of
-            Just g -> bold_ (white_ (pretty g.title)) <+> annotate (color Magenta) (pretty ("(#" <> s.gameId <> ")"))
-            Nothing -> bold_ (white_ (pretty s.gameId))
+            Just g -> bold_ (white_ (pretty g.title)) <+> annotate (color Magenta) (pretty ("(#" <> s.gameId.unGameId <> ")"))
+            Nothing -> bold_ (white_ (pretty s.gameId.unGameId))
       printLn $
         (if alive then annotate (color Green <> bold) "▶" else annotate (color Yellow) "?")
           <+> titleDoc
@@ -667,7 +646,7 @@ handle Status = do
           <+> dim_ ("(PID " <> pretty s.guardPid <> ")")
 
 handle Sync =
-  throwR "sync not yet implemented"
+  throwR (NotImplemented "cloud sync")
 
 handle Config {configKey, configValue, configUnset, configEdit} = do
   conn <- askConn
@@ -675,7 +654,7 @@ handle Config {configKey, configValue, configUnset, configEdit} = do
         deleted <- liftIO $ DB.deleteConfig conn k
         if deleted
           then liftIO . ok $ dim_ "unset" <+> cyan_ (pretty k)
-          else throwR $ "config key '" <> k <> "' not found"
+          else throwR (ConfigKeyNotFound k)
 
   if configEdit || (configKey == Just "edit" && configValue == Nothing)
     then editConfigInteractive conn
@@ -684,8 +663,8 @@ handle Config {configKey, configValue, configUnset, configEdit} = do
       Nothing -> case (configKey, configValue) of
         (Just "rm", Just k) -> doUnset k
         (Just "unset", Just k) -> doUnset k
-        (Just "rm", Nothing) -> throwR "please specify config key to remove (e.g. sena config rm <key>)"
-        (Just "unset", Nothing) -> throwR "please specify config key to remove (e.g. sena config unset <key>)"
+        (Just "rm", Nothing) -> throwR ConfigMissingKey
+        (Just "unset", Nothing) -> throwR ConfigMissingKey
         (Nothing, Nothing) -> do
           cfgs <- liftIO $ DB.getAllConfigs conn
           if null cfgs
@@ -696,22 +675,21 @@ handle Config {configKey, configValue, configUnset, configEdit} = do
           mv <- liftIO $ DB.getConfig conn k
           case mv of
             Just v -> liftIO $ putStrLn (T.unpack v)
-            Nothing -> throwR $ "config key '" <> k <> "' not found"
+            Nothing -> throwR (ConfigKeyNotFound k)
         (Just k, Just v) -> do
           case validateConfigKey k of
-            Left err -> throwR err
+            Left err -> throwR (ConfigKeyInvalid k err)
             Right () -> do
               liftIO $ DB.setConfig conn k v
               liftIO . ok $ cyan_ (pretty k) <+> dim_ "=" <+> pretty v
         (Nothing, Just _) ->
-          throwR "cannot specify value without key"
+          throwR ConfigMissingValue
 
 handle Completion {completionShell} = liftIO $ do
-  case T.toLower completionShell of
-    "bash" -> putStrLn "eval \"$(sena --bash-completion-script sena)\""
-    "zsh" -> putStrLn "eval \"$(sena --zsh-completion-script sena)\""
-    "fish" -> putStrLn "sena --fish-completion-script sena | source"
-    _ -> putStrLn "Usage: eval \"$(sena --bash-completion-script sena)\" (supported: bash, zsh, fish)"
+  case completionShell of
+    ShellBash -> putStrLn "eval \"$(sena --bash-completion-script sena)\""
+    ShellZsh -> putStrLn "eval \"$(sena --zsh-completion-script sena)\""
+    ShellFish -> putStrLn "sena --fish-completion-script sena | source"
 
 maskSensitive :: Text -> Text -> Text
 maskSensitive k v
@@ -737,8 +715,7 @@ editConfigInteractive :: Connection -> Romi ()
 editConfigInteractive conn = do
   mEditor <- liftIO $ findEditor conn
   editor <- case mEditor of
-    Nothing ->
-      throwR "no editor found: please configure core.editor, set $VISUAL or $EDITOR, or install nvim/vim/nano/vi"
+    Nothing -> throwR EditorNotFound
     Just ed -> pure ed
   cfgs <- liftIO $ DB.getAllConfigs conn
   let initialContent =
@@ -772,30 +749,23 @@ editConfigInteractive conn = do
     parseLine l =
       let (kRaw, rest) = T.breakOn "=" l
        in if T.null rest
-            then throwR $ "invalid configuration line (missing '='): " <> l
+            then throwR (ConfigFileLineInvalid l "missing '=' delimiter")
             else
               let k = T.strip kRaw
                   v = T.strip (T.drop 1 rest)
                in case validateConfigKey k of
-                    Left err -> throwR ("invalid configuration: " <> err <> " in line '" <> l <> "'")
+                    Left err -> throwR (ConfigFileLineInvalid l err)
                     Right () -> pure (k, v)
 
 openGameGuide :: Connection -> GameWithLocal -> Romi ()
 openGameGuide conn gwl = do
   case gwl.local >>= (.guideFile) of
-    Nothing ->
-      throwR $
-        "game '"
-          <> gwl.game.coreId.unGameId
-          <> "' has no guide file configured (set with: sena use "
-          <> gwl.game.coreId.unGameId
-          <> " <exe> --guide <path>)"
+    Nothing -> throwR (GuideNotConfigured gwl.game.coreId)
     Just gFile -> do
       let rawPath = normalise (T.unpack gFile)
       mEditor <- liftIO $ findEditor conn
       editor <- case mEditor of
-        Nothing ->
-          throwR "no editor found: please configure core.editor, set $VISUAL or $EDITOR, or install nvim/vim/nano/vi"
+        Nothing -> throwR EditorNotFound
         Just ed -> pure ed
       let parentDir = takeDirectory rawPath
       liftIO $ unless (null parentDir || parentDir == ".") $
@@ -808,13 +778,7 @@ openGameGuide conn gwl = do
 openGameSave :: GameWithLocal -> Romi ()
 openGameSave gwl = do
   case gwl.local >>= (.savePath) of
-    Nothing ->
-      throwR $
-        "game '"
-          <> gwl.game.coreId.unGameId
-          <> "' has no save path configured (set with: sena use "
-          <> gwl.game.coreId.unGameId
-          <> " <exe> --save <path>)"
+    Nothing -> throwR (SaveNotConfigured gwl.game.coreId)
     Just sPath -> do
       let rawDir = normalise (T.unpack sPath)
       isDir <- liftIO $ doesDirectoryExist rawDir
@@ -825,7 +789,7 @@ openGameSave gwl = do
             isFile <- liftIO $ doesFileExist rawDir
             if isFile
               then let p = takeDirectory rawDir in pure (if null p then "." else p)
-              else throwR $ "save path does not exist on disk: " <> T.pack rawDir
+              else throwR (SavePathNotFound rawDir)
       liftIO $ openDirectory targetPath
       liftIO . ok $ dim_ "opened save directory →" <+> cyan_ (pretty (T.pack targetPath))
 

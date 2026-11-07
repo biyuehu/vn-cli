@@ -9,7 +9,7 @@ import Options.Applicative
 import Prettyprinter
 import Prettyprinter.Render.Terminal
 import SenaVN.Command (commandParser)
-import SenaVN.Core (Env (Env), runRomi)
+import SenaVN.Core (Env (Env), renderSenaErrorDoc, runRomi)
 import SenaVN.DB (withDB)
 import SenaVN.Handler (handle)
 import System.Environment (getArgs)
@@ -58,7 +58,7 @@ main = do
       case result of
         Left err -> do
           renderIO stderr . layoutPretty defaultLayoutOptions $
-            annotate (color Red <> bold) "✗ error:" <+> pretty err <> line
+            renderSenaErrorDoc err <> line
           exitFailure
         Right () -> pure ()
 
