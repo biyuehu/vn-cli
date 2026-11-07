@@ -28,10 +28,11 @@ import qualified SenaVN.Session as Session
 import SenaVN.Types
 import SenaVN.Utils (randomOne)
 import System.Console.Haskeline (defaultSettings, getInputLine, runInputT)
-import System.Directory (findExecutable)
+import System.Directory (createDirectoryIfMissing, doesDirectoryExist, doesFileExist, findExecutable)
 import System.Environment (lookupEnv)
 import System.Exit (exitFailure)
-import System.FilePath ((</>))
+import System.FilePath (normalise, takeDirectory, (</>))
+import System.Info (os)
 import System.IO (hClose)
 import System.IO.Temp (withSystemTempFile)
 import System.Process (CreateProcess (..), StdStream (..), callProcess, createProcess, proc)
@@ -629,17 +630,22 @@ handle Use {useCoreId, useExePath, useSavePath, useGuide} = do
         <+> dim_ "linked →"
         <+> cyan_ (pretty useExePath)
 
-handle Info {infoCoreId} = do
+handle Info {infoCoreId, infoGuide, infoSave} = do
   conn <- askConn
   liftIO $ Session.reconcileSessions conn
-  mgwl <- liftIO $ do
-    mg <- DB.getGameWithLocal conn infoCoreId
-    case mg of
-      Nothing -> pure Nothing
-      Just gwl -> listToMaybe <$> attachRunningSessions [gwl]
+  mgwl <- liftIO $ DB.getGameWithLocal conn infoCoreId
   case mgwl of
     Nothing -> throwR ("game not found: " <> infoCoreId)
-    Just gwl -> liftIO $ printGame gwl
+    Just gwl -> do
+      if infoGuide || infoSave
+        then do
+          when infoGuide $ openGameGuide conn gwl
+          when infoSave $ openGameSave gwl
+        else do
+          liveGwls <- liftIO $ attachRunningSessions [gwl]
+          case listToMaybe liveGwls of
+            Just live -> liftIO $ printGame live
+            Nothing -> liftIO $ printGame gwl
 
 handle Status = do
   conn <- askConn
@@ -773,3 +779,61 @@ editConfigInteractive conn = do
                in case validateConfigKey k of
                     Left err -> throwR ("invalid configuration: " <> err <> " in line '" <> l <> "'")
                     Right () -> pure (k, v)
+
+openGameGuide :: Connection -> GameWithLocal -> Romi ()
+openGameGuide conn gwl = do
+  case gwl.local >>= (.guideFile) of
+    Nothing ->
+      throwR $
+        "game '"
+          <> gwl.game.coreId.unGameId
+          <> "' has no guide file configured (set with: sena use "
+          <> gwl.game.coreId.unGameId
+          <> " <exe> --guide <path>)"
+    Just gFile -> do
+      let rawPath = normalise (T.unpack gFile)
+      mEditor <- liftIO $ findEditor conn
+      editor <- case mEditor of
+        Nothing ->
+          throwR "no editor found: please configure core.editor, set $VISUAL or $EDITOR, or install nvim/vim/nano/vi"
+        Just ed -> pure ed
+      let parentDir = takeDirectory rawPath
+      liftIO $ unless (null parentDir || parentDir == ".") $
+        createDirectoryIfMissing True parentDir
+      let (prog, args) = case words editor of
+            (p : rest) -> (p, rest)
+            [] -> (editor, [])
+      liftIO $ callProcess prog (args ++ [rawPath])
+
+openGameSave :: GameWithLocal -> Romi ()
+openGameSave gwl = do
+  case gwl.local >>= (.savePath) of
+    Nothing ->
+      throwR $
+        "game '"
+          <> gwl.game.coreId.unGameId
+          <> "' has no save path configured (set with: sena use "
+          <> gwl.game.coreId.unGameId
+          <> " <exe> --save <path>)"
+    Just sPath -> do
+      let rawDir = normalise (T.unpack sPath)
+      isDir <- liftIO $ doesDirectoryExist rawDir
+      targetPath <-
+        if isDir
+          then pure rawDir
+          else do
+            isFile <- liftIO $ doesFileExist rawDir
+            if isFile
+              then let p = takeDirectory rawDir in pure (if null p then "." else p)
+              else throwR $ "save path does not exist on disk: " <> T.pack rawDir
+      liftIO $ openDirectory targetPath
+      liftIO . ok $ dim_ "opened save directory →" <+> cyan_ (pretty (T.pack targetPath))
+
+openDirectory :: FilePath -> IO ()
+openDirectory dir = do
+  let (cmd, args) = case os of
+        "mingw32" -> ("explorer", [dir])
+        "darwin"  -> ("open", [dir])
+        _         -> ("xdg-open", [dir])
+  _ <- createProcess (proc cmd args)
+  pure ()

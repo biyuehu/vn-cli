@@ -117,7 +117,11 @@ data Command
         useSavePath :: !(Maybe Text),
         useGuide :: !(Maybe Text)
       }
-  | Info {infoCoreId :: !Text}
+  | Info
+      { infoCoreId :: !Text,
+        infoGuide :: !Bool,
+        infoSave :: !Bool
+      }
   | Status
   | Sync
   | Config
@@ -372,7 +376,11 @@ commandParser =
               )
           )
 
-    infoParser' = Info <$> argument str (metavar "ID" <> help "Game ID" <> completer gameIdCompleter)
+    infoParser' =
+      Info
+        <$> argument str (metavar "ID" <> help "Game ID" <> completer gameIdCompleter)
+        <*> switch (long "guide" <> short 'g' <> help "Open guide file in editor")
+        <*> switch (long "save" <> short 's' <> help "Open save directory in file manager")
     statusParser = pure Status
     syncParser = pure Sync
     cfgParser =
