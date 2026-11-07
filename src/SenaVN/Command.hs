@@ -145,7 +145,12 @@ data Command
       }
   | Timeline
       { tlCoreIds :: ![GameId],
-        tlFilter :: !Text
+        tlFilter :: !Text,
+        tlMaxCount :: !(Maybe Int),
+        tlOneline :: !Bool,
+        tlToday :: !Bool,
+        tlReverse :: !Bool,
+        tlNoPager :: !Bool
       }
   | Use
       { useCoreId :: !GameId,
@@ -389,6 +394,31 @@ commandParser =
               <> metavar "EXPR"
               <> value ""
               <> help "Filter DSL (TODO)"
+          )
+        <*> optional
+          ( option
+              auto
+              ( long "max-count"
+                  <> short 'n'
+                  <> metavar "NUM"
+                  <> help "Limit the number of sessions output"
+              )
+          )
+        <*> switch
+          ( long "oneline"
+              <> help "Display each session on a single line"
+          )
+        <*> switch
+          ( long "today"
+              <> help "Only show sessions recorded today"
+          )
+        <*> switch
+          ( long "reverse"
+              <> help "Output sessions in reverse order (chronological)"
+          )
+        <*> switch
+          ( long "no-pager"
+              <> help "Do not pipe output into a pager"
           )
 
     useParser =

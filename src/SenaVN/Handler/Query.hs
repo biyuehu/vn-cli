@@ -11,8 +11,10 @@ where
 
 import Control.Monad (forM_, when)
 import Control.Monad.IO.Class (liftIO)
-import Data.List (sortOn)
-import Prettyprinter
+import Data.List (mapAccumL, sortOn)
+import Data.Ord (Down (..))
+import Data.Time (getCurrentTimeZone, localDay, utcToLocalTime)
+import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import SenaVN.Api (fetchFromVndb)
 import SenaVN.Command (Command (..), SortField (..))
 import SenaVN.Core (Romi, askConn, throwR)
@@ -20,21 +22,21 @@ import qualified SenaVN.DB as DB
 import SenaVN.Error (SenaError (..))
 import SenaVN.Handler.Common (attachRunningSessions)
 import SenaVN.Pretty
-  ( bold_,
-    dim_,
-    fmtTimeline,
+  ( TimelineItem (..),
+    prettyTimelineGraphW,
+    prettyTimelineOnelineW,
     printFetchResult,
     printFetchResults,
     printGame,
     printGameStat,
     printGames,
     printLibraryStats,
-    render,
-    white_,
   )
 import qualified SenaVN.Session as Session
 import SenaVN.Stats (effectivePlayed)
-import SenaVN.Types (GameCore (..), GameId (..), GameWithLocal (..), VndbBy (..))
+import SenaVN.System (runWithPager)
+import SenaVN.Types (GameCore (..), GameWithLocal (..), PlayTimeline (..), VndbBy (..))
+import SenaVN.Utils (formatRelativeTime, getTermWidth, now)
 
 handleFetch :: Command -> Romi ()
 handleFetch Fetch {fetchName, fetchOrder} = do
@@ -86,26 +88,66 @@ handleStats Stats {statsCoreIds, statsFilter = _} = do
 handleStats _ = pure ()
 
 handleTimeline :: Command -> Romi ()
-handleTimeline Timeline {tlCoreIds, tlFilter = _} = do
+handleTimeline Timeline {tlCoreIds, tlFilter = _, tlMaxCount, tlOneline, tlToday, tlReverse, tlNoPager} = do
   conn <- askConn
   liftIO $ Session.reconcileSessions conn
-  all' <- liftIO $ DB.getAllGames conn
+  allGames <- liftIO $ DB.getAllGames conn
   let targets =
         if null tlCoreIds
-          then all'
-          else filter (\g -> g.coreId `elem` tlCoreIds) all'
+          then allGames
+          else filter (\g -> g.coreId `elem` tlCoreIds) allGames
   when (null targets) $ throwR (NoMatchingGamesFound tlCoreIds)
-  liftIO $ forM_ targets $ \g ->
-    render $
-      vsep
-        [ bold_ (white_ (pretty g.title))
-            <+> dim_ (pretty ("(#" <> g.coreId.unGameId <> ")"))
-            <+> dim_ ("· " <> pretty (show (length g.playTimelines) <> " session(s)")),
-          if null g.playTimelines
-            then indent 2 (dim_ "no recorded play sessions.")
-            else indent 2 $ vsep (map fmtTimeline (reverse g.playTimelines)),
-          emptyDoc
-        ]
+
+  nowTs <- liftIO now
+  tz <- liftIO getCurrentTimeZone
+  let todayDay = localDay (utcToLocalTime tz (posixSecondsToUTCTime (fromIntegral nowTs)))
+
+  let annotateGame :: GameCore -> [TimelineItem]
+      annotateGame g =
+        let sortedChronological = sortOn (.start) g.playTimelines
+            scanStep acc tl =
+              let newAcc = acc + tl.duration
+               in ( newAcc,
+                    TimelineItem
+                      { itemGameId = g.coreId,
+                        itemTitle = g.title,
+                        itemTimeline = tl,
+                        itemAccumSec = newAcc,
+                        itemExpectedMin = g.expectedPlayTime,
+                        itemRelative = formatRelativeTime nowTs tl.start
+                      }
+                  )
+         in snd (mapAccumL scanStep 0 sortedChronological)
+
+      allItems = concatMap annotateGame targets
+
+      filteredToday =
+        if tlToday
+          then
+            filter
+              ( \it ->
+                  let itemDay = localDay (utcToLocalTime tz (posixSecondsToUTCTime (fromIntegral it.itemTimeline.start)))
+                   in itemDay == todayDay
+              )
+              allItems
+          else allItems
+
+      sortedItems =
+        if tlReverse
+          then sortOn (\it -> it.itemTimeline.start) filteredToday
+          else sortOn (Down . (\it -> it.itemTimeline.start)) filteredToday
+
+      finalItems = case tlMaxCount of
+        Just n | n > 0 -> take n sortedItems
+        _ -> sortedItems
+
+  w <- liftIO getTermWidth
+  let doc =
+        if tlOneline
+          then prettyTimelineOnelineW w finalItems
+          else prettyTimelineGraphW w finalItems
+
+  liftIO $ runWithPager tlNoPager doc
 handleTimeline _ = pure ()
 
 handleSync :: Romi ()

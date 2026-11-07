@@ -46,6 +46,9 @@ module SenaVN.Pretty
     progressBar,
     LibraryStats (..),
     computeStats,
+    TimelineItem (..),
+    prettyTimelineGraphW,
+    prettyTimelineOnelineW,
   )
 where
 
@@ -120,6 +123,106 @@ fmtTimeline tl
               then pretty (startDate <> " " <> startTime <> " → " <> endTime)
               else pretty (startDate <> " " <> startTime <> " → " <> endDate <> " " <> endTime)
        in dim_ "·" <+> timeRange <+> dim_ "·" <+> fmtSeconds tl.duration
+
+data TimelineItem = TimelineItem
+  { itemGameId :: !GameId,
+    itemTitle :: !Text,
+    itemTimeline :: !PlayTimeline,
+    itemAccumSec :: !Seconds,
+    itemExpectedMin :: !Minutes,
+    itemRelative :: !Text
+  }
+  deriving (Show, Eq)
+
+prettyTimelineGraphW :: Int -> [TimelineItem] -> Doc AnsiStyle
+prettyTimelineGraphW _ [] = dim_ "  no recorded play sessions."
+prettyTimelineGraphW w items =
+  vsep (concatMap formatEntry items)
+    <> line
+    <> ruleW w
+    <> line
+    <> dim_ ("  " <> pretty (show (length items) <> " session(s)") <> "  ·  total " <> pretty (fmtSecStr totalTime))
+  where
+    totalTime = sum (map (\it -> it.itemTimeline.duration) items)
+
+    formatEntry :: TimelineItem -> [Doc AnsiStyle]
+    formatEntry it =
+      let tl = it.itemTimeline
+          startUtc = posixSecondsToUTCTime (fromIntegral tl.start)
+          endTs = if tl.end > 0 then tl.end else tl.start + tl.duration
+          endUtc = posixSecondsToUTCTime (fromIntegral endTs)
+          startDate = formatTime defaultTimeLocale "%Y-%m-%d" startUtc
+          endDate = formatTime defaultTimeLocale "%Y-%m-%d" endUtc
+          startTime = formatTime defaultTimeLocale "%H:%M" startUtc
+          endTime = formatTime defaultTimeLocale "%H:%M" endUtc
+          startFull = formatTime defaultTimeLocale "%Y-%m-%d %H:%M:%S" startUtc
+          dayOfWeek = formatTime defaultTimeLocale "%a" startUtc
+
+          timeRange =
+            if startDate == endDate
+              then pretty (startTime <> " → " <> endTime)
+              else pretty (startDate <> " " <> startTime <> " → " <> endDate <> " " <> endTime)
+
+          header =
+            yellow_ "*"
+              <+> bold_ (white_ (pretty ("session " <> startFull)))
+              <+> dim_ ("(" <> pretty dayOfWeek <> ", " <> pretty it.itemRelative <> ")")
+
+          gameLine =
+            dim_ "| "
+              <> dim_ "Game:     "
+              <> bold_ (white_ (pretty it.itemTitle))
+              <+> annotate (color Magenta) (pretty ("(#" <> it.itemGameId.unGameId <> ")"))
+
+          timeLine =
+            dim_ "| "
+              <> dim_ "Duration: "
+              <> timeRange
+              <+> dim_ "·"
+              <+> green_ (pretty (fmtSecStr tl.duration))
+
+          progressLine =
+            dim_ "| "
+              <> dim_ "Progress: "
+              <> pretty (fmtSecStr it.itemAccumSec)
+              <> (if it.itemExpectedMin > 0 then dim_ " / " <> fmtMinutes it.itemExpectedMin else mempty)
+              <+> progressBar 14 it.itemAccumSec it.itemExpectedMin
+
+          spacing = dim_ "|"
+       in [header, gameLine, timeLine, progressLine, spacing]
+
+prettyTimelineOnelineW :: Int -> [TimelineItem] -> Doc AnsiStyle
+prettyTimelineOnelineW _ [] = dim_ "  no recorded play sessions."
+prettyTimelineOnelineW w items =
+  vsep (map (formatRow w) items)
+    <> line
+    <> ruleW w
+    <> line
+    <> dim_ ("  " <> pretty (show (length items) <> " session(s)") <> "  ·  total " <> pretty (fmtSecStr totalTime))
+  where
+    totalTime = sum (map (\it -> it.itemTimeline.duration) items)
+
+    formatRow :: Int -> TimelineItem -> Doc AnsiStyle
+    formatRow maxW it =
+      let tl = it.itemTimeline
+          startUtc = posixSecondsToUTCTime (fromIntegral tl.start)
+          startShort = formatTime defaultTimeLocale "%Y-%m-%d %H:%M" startUtc
+          durStr = fmtSecStr tl.duration
+          accumStr = fmtSecStr it.itemAccumSec
+          pctStr =
+            if it.itemExpectedMin > 0 && it.itemAccumSec > 0
+              then " (" <> show ((it.itemAccumSec * 100) `div` minutesToSeconds it.itemExpectedMin) <> "%)"
+              else ""
+          progressCol = accumStr <> pctStr
+          idCol = it.itemGameId.unGameId
+          fixedW = 2 + 16 + 1 + 9 + 1 + 9 + 1 + 16 + 1
+          titleW = max 15 (maxW - fixedW)
+       in yellow_ "*"
+            <+> dim_ (pretty startShort)
+            <+> fill 9 (annotate (color Magenta) (pretty idCol))
+            <+> fill 9 (green_ (pretty durStr))
+            <+> fill 16 (cyan_ (pretty progressCol))
+            <+> bold_ (white_ (truncated titleW it.itemTitle))
 
 ratingDoc :: Double -> Doc AnsiStyle
 ratingDoc 0 = dim_ "not rated"

@@ -4,6 +4,7 @@ module SenaVN.Utils
     now,
     formatDate,
     formatTimestamp,
+    formatRelativeTime,
     fmtSecStr,
     wrapLine,
     truncateText,
@@ -53,6 +54,25 @@ formatTimestamp fmt ts =
 formatDate :: Int -> Text
 formatDate 0 = "—"
 formatDate ts = formatTimestamp "%Y-%m-%d" ts
+
+formatRelativeTime :: Int -> Int -> Text
+formatRelativeTime nowTs targetTs
+  | targetTs <= 0 = "unknown"
+  | diff < 0 = "in the future"
+  | diff < 60 = "just now"
+  | diff < 120 = "1 minute ago"
+  | diff < 3600 = T.pack (show (diff `div` 60)) <> " minutes ago"
+  | diff < 7200 = "1 hour ago"
+  | diff < 86400 = T.pack (show (diff `div` 3600)) <> " hours ago"
+  | diff < 172800 = "yesterday"
+  | diff < 86400 * 7 = T.pack (show (diff `div` 86400)) <> " days ago"
+  | diff < 86400 * 14 = "1 week ago"
+  | diff < 86400 * 30 = T.pack (show (diff `div` (86400 * 7))) <> " weeks ago"
+  | diff < 86400 * 60 = "1 month ago"
+  | diff < 86400 * 365 = T.pack (show (diff `div` (86400 * 30))) <> " months ago"
+  | otherwise = T.pack (show (diff `div` (86400 * 365))) <> " years ago"
+  where
+    diff = nowTs - targetTs
 
 fmtSecStr :: Seconds -> String
 fmtSecStr 0 = "0m"
