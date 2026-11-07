@@ -3,8 +3,8 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use sysinfo::{Pid, ProcessesToUpdate, System};
 
-use crate::session::SessionData;
-use crate::win::is_window_active;
+use super::session::SessionData;
+use super::win::is_window_active;
 
 pub fn now_secs() -> u64 {
   SystemTime::now()

@@ -1,14 +1,11 @@
 use std::path::Path;
 use std::process::Command;
 
-mod cli;
-mod monitor;
-mod session;
-mod win;
+mod guard;
 
-use cli::{parse_args, Mode};
-use monitor::Monitor;
-use win::is_pid_alive;
+use guard::cli::{parse_args, Mode};
+use guard::monitor::Monitor;
+use guard::win::is_pid_alive;
 
 fn main() {
   match parse_args() {
