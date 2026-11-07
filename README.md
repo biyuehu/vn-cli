@@ -9,5 +9,4 @@ A Visual Novel Management System In Terminal.
 ## TODO
 
 - [ ] Sync、filterDsl 这几个留着以后填
-<!-- - [ ] Playtime analyze (globe、specific game) 似乎有了-->
 - [ ] sena timeline 做成类似 git log 那种逻辑（显示量）以及效果（滚动）
