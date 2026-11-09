@@ -1,5 +1,3 @@
-{-# LANGUAGE NamedFieldPuns #-}
-
 module SenaVN.Handler.Config
   ( handleConfig,
     handleCompletion,

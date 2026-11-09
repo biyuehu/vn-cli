@@ -1,5 +1,3 @@
-{-# LANGUAGE ScopedTypeVariables #-}
-
 module SenaVN.Command
   ( Command (..),
     MetaOptions (..),

@@ -1,6 +1,4 @@
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
 
 module SenaVN.DB
   ( withDB,

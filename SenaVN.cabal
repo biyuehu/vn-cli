@@ -19,10 +19,10 @@ extra-doc-files:
 
 common shared-properties
   ghc-options: -Wall
-  default-language: Haskell2010
+  default-language: GHC2021
   default-extensions:
     DeriveAnyClass
-    DeriveGeneric
+    DerivingStrategies
     DuplicateRecordFields
     OverloadedRecordDot
     OverloadedStrings

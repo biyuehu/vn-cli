@@ -1,6 +1,4 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 
 module SenaVN.Pretty
   ( prettyGameDetailW,

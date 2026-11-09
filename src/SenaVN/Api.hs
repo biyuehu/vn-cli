@@ -17,17 +17,29 @@ import Network.HTTP.Req
 import SenaVN.Types
 import System.Environment (setEnv)
 
-newtype VNTitle = VNTitle {title :: Text} deriving (Show, Generic, FromJSON)
+newtype VNTitle = VNTitle {title :: Text}
+  deriving stock (Show, Generic)
+  deriving anyclass (FromJSON)
 
-newtype VNImage = VNImage {url :: Text} deriving (Show, Generic, FromJSON)
+newtype VNImage = VNImage {url :: Text}
+  deriving stock (Show, Generic)
+  deriving anyclass (FromJSON)
 
-newtype VNScreenshot = VNScreenshot {url :: Text} deriving (Show, Generic, FromJSON)
+newtype VNScreenshot = VNScreenshot {url :: Text}
+  deriving stock (Show, Generic)
+  deriving anyclass (FromJSON)
 
-data VNTag = VNTag {name :: !Text, rating :: !Double, spoiler :: !(Maybe Int)} deriving (Show, Generic, FromJSON)
+data VNTag = VNTag {name :: !Text, rating :: !Double, spoiler :: !(Maybe Int)}
+  deriving stock (Show, Generic)
+  deriving anyclass (FromJSON)
 
-newtype VNDeveloper = VNDeveloper {name :: Text} deriving (Show, Generic, FromJSON)
+newtype VNDeveloper = VNDeveloper {name :: Text}
+  deriving stock (Show, Generic)
+  deriving anyclass (FromJSON)
 
-data VNExtLink = VNExtLink {url :: !Text, name :: !Text} deriving (Show, Generic, FromJSON)
+data VNExtLink = VNExtLink {url :: !Text, name :: !Text}
+  deriving stock (Show, Generic)
+  deriving anyclass (FromJSON)
 
 data VNRawItem = VNRawItem
   { id :: !Text,
@@ -43,9 +55,12 @@ data VNRawItem = VNRawItem
     developers :: ![VNDeveloper],
     extlinks :: ![VNExtLink]
   }
-  deriving (Show, Generic, FromJSON)
+  deriving stock (Show, Generic)
+  deriving anyclass (FromJSON)
 
-newtype VNResponse = VNResponse {results :: [VNRawItem]} deriving (Show, Generic, FromJSON)
+newtype VNResponse = VNResponse {results :: [VNRawItem]}
+  deriving stock (Show, Generic)
+  deriving anyclass (FromJSON)
 
 transformVNData :: VNRawItem -> FetchGameData
 transformVNData raw =

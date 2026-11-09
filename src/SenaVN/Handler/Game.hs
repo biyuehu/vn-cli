@@ -1,5 +1,3 @@
-{-# LANGUAGE NamedFieldPuns #-}
-
 module SenaVN.Handler.Game
   ( handleAdd,
     handleEdit,

@@ -1,5 +1,3 @@
-{-# LANGUAGE ScopedTypeVariables #-}
-
 module SenaVN.System
   ( findEditor,
     openEditor,

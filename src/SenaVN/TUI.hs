@@ -1,8 +1,3 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-
 module SenaVN.TUI (runTUI) where
 
 import Brick

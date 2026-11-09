@@ -1,6 +1,3 @@
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-
 module SenaVN.Types where
 
 import Data.Aeson (FromJSON, ToJSON)
