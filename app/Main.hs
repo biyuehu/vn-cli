@@ -8,7 +8,7 @@ import Data.Word (Word32)
 import Options.Applicative
 import Prettyprinter
 import Prettyprinter.Render.Terminal
-import SenaVN.Command (commandParser)
+import SenaVN.Command (Command (Tui), commandParser)
 import SenaVN.Core (Env (Env), renderSenaErrorDoc, runRomi)
 import SenaVN.DB (withDB)
 import SenaVN.Handler (handle)
@@ -32,18 +32,21 @@ main = do
   hSetEncoding stderr utf8
 #endif
   args <- getArgs
-  cmd <- case execParserPure parserPrefs opts args of
-    Success c -> pure c
-    Failure failure -> do
-      let (msg, code) = renderFailure failure "sena"
-      case code of
-        ExitSuccess -> putStr msg
-        _ -> hPutStr stderr msg
-      exitWith code
-    CompletionInvoked compl -> do
-      msg <- execCompletion compl "sena"
-      putStr msg
-      exitSuccess
+  cmd <-
+    if null args
+      then pure Tui
+      else case execParserPure parserPrefs opts args of
+        Success c -> pure c
+        Failure failure -> do
+          let (msg, code) = renderFailure failure "sena"
+          case code of
+            ExitSuccess -> putStr msg
+            _ -> hPutStr stderr msg
+          exitWith code
+        CompletionInvoked compl -> do
+          msg <- execCompletion compl "sena"
+          putStr msg
+          exitSuccess
   handleApp cmd `catch` \(e :: SomeException) ->
     case fromException e of
       Just (exitCode :: ExitCode) -> throwIO exitCode
