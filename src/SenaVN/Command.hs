@@ -172,6 +172,7 @@ data Command
         configEdit :: !Bool
       }
   | Completion {completionShell :: !ShellType}
+  | Tui
   deriving (Show)
 
 metaParser :: Parser MetaOptions
@@ -246,6 +247,7 @@ commandParser =
       <> sub "sync" syncParser "Sync to GitHub"
       <> sub "config" cfgParser "Manage configuration"
       <> sub "completion" completionParser "Generate shell completion script"
+      <> sub "tui" (pure Tui) "Open interactive TUI browser"
   where
     sub cmd p desc = command cmd (info (p <**> helper) (progDesc desc))
     addParser =

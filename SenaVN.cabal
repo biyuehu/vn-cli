@@ -31,11 +31,13 @@ common shared-properties
     aeson,
     aeson-pretty,
     base ^>=4.19,
+    brick,
     bytestring,
     containers,
     directory,
     filepath,
     haskeline,
+    mtl,
     optparse-applicative,
     prettyprinter,
     prettyprinter-ansi-terminal,
@@ -47,6 +49,8 @@ common shared-properties
     text,
     time,
     transformers,
+    vty,
+    vty-crossplatform,
 
 library
   import: shared-properties
@@ -69,6 +73,7 @@ library
     SenaVN.Session
     SenaVN.Stats
     SenaVN.System
+    SenaVN.TUI
     SenaVN.Types
     SenaVN.Utils
 
@@ -76,4 +81,5 @@ executable SenaVN
   import: shared-properties
   main-is: Main.hs
   hs-source-dirs: app
+  ghc-options: -threaded
   build-depends: SenaVN

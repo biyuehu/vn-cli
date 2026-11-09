@@ -85,7 +85,6 @@ edit `<id>`：
 
 ### P3（以后）
 
-- TUI（brick）：tree 形式，顶级节点为子命令，展开后为游戏；只做可选浏览层，不替代 CLI。
 - 测试：`applyMeta`、`applyFetch`、`pickResult`、日期解析、session JSON 往返、reconcile 都是纯函数/易隔离，优先补测。
 
 ## 9. 建议顺序
