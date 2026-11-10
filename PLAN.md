@@ -71,17 +71,9 @@ edit `<id>`：
 - Windows 编码：`app/Main.hs` 用 CPP 条件编译，仅在 `mingw32_HOST_OS` 下 FFI 调 `SetConsoleOutputCP(65001)`，再 `hSetEncoding` 为 utf8。**不要让用户手动 chcp。**
 - 构建：`cabal build` + `cargo build --release`，foo.exe 放在 sena.exe 同目录，Haskell 侧用 `getExecutablePath` 定位。
 
-## 7. 当前状态
-
-已完成：Command 解析与分支逻辑、DB schema 与 CRUD、Session 读写与 reconcile、VNDB 抓取、Pretty 输出、Romi/Env、foo 的 `--run` 与 `--check-pid`、Windows UTF-8。
-
-未进仓库（Handler 仍为旧版）：editor 改造、`spawnFoo` 改造、rm 确认提示。
-
 ## 8. 待办
 
 - **Filter DSL**：独立设计，供 list/stat/tl/run 共用（当前所有 filter 参数为空操作）。
-- **Sync**：基于 GitHub repo + API，对应 `CloudData`；需要删除墓碑表（`Remove --hard` 目前无意义，两种行为相同）。
-- `sena import`：读取旧 `data.json`（旧 `RootState`），方便用真实数据自测。
 
 ### P3（以后）
 

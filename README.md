@@ -8,4 +8,4 @@ A Visual Novel Management System In Terminal.
 
 ## TODO
 
-- [ ] Sync、filterDsl 这几个留着以后填
+- [ ] filterDsl 这几个留着以后填
