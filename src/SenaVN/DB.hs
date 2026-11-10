@@ -11,6 +11,10 @@ module SenaVN.DB
     insertGame,
     updateGame,
     deleteGame,
+    getDeletedGames,
+    clearTombstone,
+    recordDeletedGame,
+    applySyncMerge,
     getLocalPath,
     upsertLocalPath,
     upsertPlaySession,
@@ -39,6 +43,7 @@ import Data.Maybe (fromMaybe, listToMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
+import Data.Time.Clock.POSIX (getPOSIXTime)
 import Database.SQLite.Simple
 import SenaVN.Types
 import SenaVN.Utils (getAppDir)
@@ -59,7 +64,7 @@ withDB action = do
     action conn
 
 initDB :: Connection -> IO ()
-initDB conn =
+initDB conn = do
   mapM_
     (execute_ conn)
     [ "CREATE TABLE IF NOT EXISTS games (\
@@ -95,8 +100,29 @@ initDB conn =
       "CREATE TABLE IF NOT EXISTS configs (\
       \  key   TEXT PRIMARY KEY,\
       \  value TEXT NOT NULL\
+      \)",
+      "CREATE TABLE IF NOT EXISTS deleted_games (\
+      \  id         TEXT PRIMARY KEY,\
+      \  deleted_at INTEGER NOT NULL\
       \)"
     ]
+  initDefaultConfigs conn
+
+initDefaultConfigs :: Connection -> IO ()
+initDefaultConfigs conn =
+  mapM_
+    (\(k, v) -> execute conn "INSERT OR IGNORE INTO configs (key, value) VALUES (?, ?)" (k :: Text, v :: Text))
+    defaultConfigs
+
+defaultConfigs :: [(Text, Text)]
+defaultConfigs =
+  [ ("core.editor", ""),
+    ("fetch.proxy", ""),
+    ("sync.branch", "main"),
+    ("sync.path", "data.json"),
+    ("sync.repo", ""),
+    ("sync.token", "")
+  ]
 
 decodeJson :: (FromJSON a) => Text -> a -> a
 decodeJson t defVal = fromMaybe defVal (decode (BL.fromStrict (TE.encodeUtf8 t)))
@@ -309,8 +335,80 @@ updateGame conn g = withTransaction conn $ do
     )
 
 deleteGame :: Connection -> GameId -> IO ()
-deleteGame conn gid =
+deleteGame conn gid = withTransaction conn $ do
+  nowTs <- round <$> getPOSIXTime
+  execute
+    conn
+    "INSERT INTO deleted_games (id, deleted_at) VALUES (?, ?)\
+    \ ON CONFLICT(id) DO UPDATE SET deleted_at=excluded.deleted_at"
+    (gid, nowTs :: Int)
   execute conn "DELETE FROM games WHERE id=?" (Only gid)
+
+getDeletedGames :: Connection -> IO [(GameId, Int)]
+getDeletedGames conn =
+  query_ conn "SELECT id, deleted_at FROM deleted_games"
+
+clearTombstone :: Connection -> GameId -> IO ()
+clearTombstone conn gid =
+  execute conn "DELETE FROM deleted_games WHERE id=?" (Only gid)
+
+recordDeletedGame :: Connection -> GameId -> Int -> IO ()
+recordDeletedGame conn gid ts =
+  execute
+    conn
+    "INSERT INTO deleted_games (id, deleted_at) VALUES (?, ?)\
+    \ ON CONFLICT(id) DO UPDATE SET deleted_at=excluded.deleted_at"
+    (gid, ts)
+
+applySyncMerge :: Connection -> [GameCore] -> [GameId] -> [GameId] -> IO ()
+applySyncMerge conn toUpsert toDelete toClearTombstones = withTransaction conn $ do
+  forM_ toUpsert $ \g -> do
+    let gid = g.coreId.unGameId
+    execute
+      conn
+      "INSERT INTO games\
+      \ (id,vndb_id,title,description,expected_minutes,\
+      \  last_play,create_date,update_date,release_date,rating,developer,\
+      \  alias,tags,images,links)\
+      \ VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)\
+      \ ON CONFLICT(id) DO UPDATE SET\
+      \  vndb_id=excluded.vndb_id,\
+      \  title=excluded.title,\
+      \  description=excluded.description,\
+      \  expected_minutes=excluded.expected_minutes,\
+      \  last_play=excluded.last_play,\
+      \  create_date=excluded.create_date,\
+      \  update_date=excluded.update_date,\
+      \  release_date=excluded.release_date,\
+      \  rating=excluded.rating,\
+      \  developer=excluded.developer,\
+      \  alias=excluded.alias,\
+      \  tags=excluded.tags,\
+      \  images=excluded.images,\
+      \  links=excluded.links"
+      ( ( gid,
+          g.vndbId,
+          g.title,
+          g.description,
+          g.expectedPlayTime,
+          g.lastPlay,
+          g.createDate,
+          g.updateDate
+        )
+          :. ( g.releaseDate,
+               g.rating,
+               g.developer,
+               encodeJson g.alias,
+               encodeJson g.tags,
+               encodeJson g.images,
+               encodeJson g.links
+             )
+      )
+    forM_ g.playTimelines $ upsertPlaySession conn g.coreId
+  forM_ toDelete $ \gid ->
+    execute conn "DELETE FROM games WHERE id=?" (Only gid)
+  forM_ toClearTombstones $ \gid ->
+    execute conn "DELETE FROM deleted_games WHERE id=?" (Only gid)
 
 getLocalPath :: Connection -> GameId -> IO (Maybe LocalPath)
 getLocalPath conn gid = do

@@ -3,7 +3,6 @@ module SenaVN.Handler.Query
     handleStats,
     handleTimeline,
     handleFetch,
-    handleSync,
   )
 where
 
@@ -147,7 +146,3 @@ handleTimeline Timeline {tlCoreIds, tlFilter = _, tlMaxCount, tlOneline, tlToday
 
   liftIO $ runWithPager tlNoPager doc
 handleTimeline _ = pure ()
-
-handleSync :: Romi ()
-handleSync =
-  throwR (NotImplemented "cloud sync")

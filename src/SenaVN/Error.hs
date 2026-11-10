@@ -41,8 +41,11 @@ data SenaError
     InvalidNewGameId !GameId !Text
   | ConflictingRunFlags
   | MissingRunTarget
-  | NotImplemented !Text
-  | UserCancelled
+  | -- Cloud Sync
+    SyncMissingConfig !Text
+  | SyncHttpError !Int !Text
+  | SyncNetworkError !Text
+  | SyncPayloadError !Text
   deriving (Show, Eq)
 
 renderSenaErrorDoc :: SenaError -> Doc AnsiStyle
@@ -171,12 +174,34 @@ renderSenaErrorDoc err = case err of
       [ errHead "no game target specified.",
         hintLine "specify a game ID/name, or use --random / --recent / --last."
       ]
-  NotImplemented feature ->
+  SyncMissingConfig key ->
     vsep
-      [ errHead ("feature not yet implemented:" <+> whiteBold (pretty feature) <> ".")
+      [ errHead ("sync configuration" <+> cyanKey key <+> "is not set."),
+        hintLine ("configure it with: sena config " <> pretty key <> " <value>")
       ]
-  UserCancelled ->
-    annotate (color Yellow <> bold) "!" <+> dim_ "operation cancelled."
+  SyncHttpError code msg ->
+    vsep
+      [ errHead ("GitHub API request failed" <+> parens ("HTTP " <> pretty code) <> ":"),
+        indent 2 (dim_ (pretty msg)),
+        hintLine
+          ( case code of
+              401 -> "check that 'sync.token' is valid and has not expired."
+              403 -> "check that your token has 'repo' permissions, or wait if rate limited."
+              404 -> "check that 'sync.repo' exists and your token has access to it."
+              409 -> "conflict could not be resolved automatically after multiple retries."
+              _ -> "verify your GitHub repository settings and permissions."
+          )
+      ]
+  SyncNetworkError msg ->
+    vsep
+      [ errHead ("failed to connect to GitHub:" <+> pretty msg),
+        hintLine "check your internet connection or configure proxy via: sena config fetch.proxy <url>"
+      ]
+  SyncPayloadError msg ->
+    vsep
+      [ errHead ("remote sync data is corrupted:" <+> pretty msg),
+        hintLine "inspect your remote data file on GitHub or back it up before syncing."
+      ]
   where
     errHead msg = annotate (color Red <> bold) "✗ error:" <+> msg
     hintLine msg = indent 2 (dim_ "↳" <+> annotate (color Yellow) "hint:" <+> msg)

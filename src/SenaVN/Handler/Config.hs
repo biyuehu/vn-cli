@@ -8,14 +8,15 @@ where
 
 import Control.Monad (forM_)
 import Control.Monad.IO.Class (liftIO)
+import Data.Maybe (isNothing)
 import Data.Text (Text)
-import qualified Data.Text as T
-import qualified Data.Text.IO as TIO
+import Data.Text qualified as T
+import Data.Text.IO qualified as TIO
 import Database.SQLite.Simple (Connection)
 import Prettyprinter
 import SenaVN.Command (Command (..), ShellType (..))
 import SenaVN.Core (Romi, askConn, throwR)
-import qualified SenaVN.DB as DB
+import SenaVN.DB qualified as DB
 import SenaVN.Error (SenaError (..))
 import SenaVN.Interactive (ok, printLn)
 import SenaVN.Pretty (cyan_, dim_)
@@ -43,10 +44,9 @@ editConfigInteractive conn = do
         T.unlines $
           [ "# SenaVN Configuration",
             "# Format: key = value",
-            "# Lines starting with '#' or ';' are ignored.",
-            ""
+            "# Lines starting with '#' or ';' are ignored."
           ]
-            ++ map (\(k, v) -> k <> " = " <> v) cfgs
+            ++ concatMap renderConfigEntry cfgs
   content <- liftIO $
     withSystemTempFile "sena-config-.ini" $ \path h -> do
       TIO.hPutStr h initialContent
@@ -60,6 +60,25 @@ editConfigInteractive conn = do
   liftIO $ DB.setAllConfigs conn parsed
   liftIO . ok $ pretty ("Configuration updated (" <> show (length parsed) <> " entries).")
   where
+    renderConfigEntry (k, v) =
+      case fieldDoc k of
+        Just doc -> ["", doc, k <> " = " <> v]
+        Nothing -> [k <> " = " <> v]
+
+    fieldDoc "core.editor" =
+      Just "# Preferred text editor for metadata and config (e.g. code --wait, nvim, notepad)"
+    fieldDoc "fetch.proxy" =
+      Just "# Proxy URL for VNDB and cloud synchronization (e.g. http://127.0.0.1:7890)"
+    fieldDoc "sync.branch" =
+      Just "# Cloud sync branch name (default: main)"
+    fieldDoc "sync.path" =
+      Just "# Cloud sync file path in repository (default: data.json)"
+    fieldDoc "sync.repo" =
+      Just "# Target GitHub repository in 'owner/repo' format"
+    fieldDoc "sync.token" =
+      Just "# GitHub Personal Access Token (with repo scope)"
+    fieldDoc _ = Nothing
+
     parseConfigContent :: Text -> Romi [(Text, Text)]
     parseConfigContent txt = mapM parseLine (filter (not . isIgnored) (T.lines txt))
 
@@ -87,7 +106,7 @@ handleConfig Config {configKey, configValue, configUnset, configEdit} = do
           then liftIO . ok $ dim_ "unset" <+> cyan_ (pretty k)
           else throwR (ConfigKeyNotFound k)
 
-  if configEdit || (configKey == Just "edit" && configValue == Nothing)
+  if configEdit || (configKey == Just "edit" && isNothing configValue)
     then editConfigInteractive conn
     else case configUnset of
       Just k -> doUnset k

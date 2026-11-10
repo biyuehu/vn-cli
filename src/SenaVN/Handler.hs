@@ -7,6 +7,7 @@ import qualified SenaVN.Handler.Config as Config
 import qualified SenaVN.Handler.Game as Game
 import qualified SenaVN.Handler.Query as Query
 import qualified SenaVN.Handler.Run as Run
+import qualified SenaVN.Handler.Sync as Sync
 import qualified SenaVN.TUI as TUI
 
 handle :: Command -> Romi ()
@@ -23,7 +24,7 @@ handle cmd = case cmd of
   Stats {} -> Query.handleStats cmd
   Timeline {} -> Query.handleTimeline cmd
   Fetch {} -> Query.handleFetch cmd
-  Sync -> Query.handleSync
+  Sync {syncDryRun} -> Sync.handleSync syncDryRun
   Config {} -> Config.handleConfig cmd
   Completion {} -> Config.handleCompletion cmd
   Tui -> do

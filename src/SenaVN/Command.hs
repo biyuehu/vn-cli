@@ -163,6 +163,8 @@ data Command
       }
   | Status
   | Sync
+      { syncDryRun :: !Bool
+      }
   | Config
       { configKey :: !(Maybe Text),
         configValue :: !(Maybe Text),
@@ -448,7 +450,9 @@ commandParser =
         <*> switch (long "guide" <> short 'g' <> help "Open guide file in editor")
         <*> switch (long "save" <> short 's' <> help "Open save directory in file manager")
     statusParser = pure Status
-    syncParser = pure Sync
+    syncParser =
+      Sync
+        <$> switch (long "dry-run" <> short 'n' <> help "Simulate sync without applying local or remote changes")
     cfgParser =
       Config
         <$> optional (argument str (metavar "KEY" <> help "Config key"))

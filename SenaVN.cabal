@@ -68,10 +68,12 @@ library
     SenaVN.Handler.Game
     SenaVN.Handler.Query
     SenaVN.Handler.Run
+    SenaVN.Handler.Sync
     SenaVN.Interactive
     SenaVN.Pretty
     SenaVN.Session
     SenaVN.Stats
+    SenaVN.Sync
     SenaVN.System
     SenaVN.TUI
     SenaVN.Types
