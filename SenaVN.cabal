@@ -1,10 +1,10 @@
 cabal-version: 3.0
 name: SenaVN
 version:
-  2.0.0.0
+  2.0.0
 
 homepage:
-  https://vn.himeno-sena.com
+  https://github.com/biyuehu/vn-cli
 
 license:
   GPL-3.0-only
@@ -78,6 +78,11 @@ library
     SenaVN.TUI
     SenaVN.Types
     SenaVN.Utils
+    SenaVN.Version
+  other-modules:
+    Paths_SenaVN
+  autogen-modules:
+    Paths_SenaVN
 
 executable SenaVN
   import: shared-properties

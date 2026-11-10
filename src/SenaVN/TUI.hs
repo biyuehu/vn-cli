@@ -37,14 +37,14 @@ import Data.List (sortOn)
 import Data.Maybe (fromMaybe, isJust)
 import Data.Ord (Down (..))
 import Data.Text (Text)
-import qualified Data.Text as T
+import Data.Text qualified as T
 import Database.SQLite.Simple (Connection)
-import qualified Graphics.Vty as V
-import qualified Graphics.Vty.CrossPlatform as VCP
+import Graphics.Vty qualified as V
+import Graphics.Vty.CrossPlatform qualified as VCP
 import SenaVN.Core (Env (..), renderSenaError, runRomi)
-import qualified SenaVN.DB as DB
+import SenaVN.DB qualified as DB
 import SenaVN.Handler.Common (attachRunningSessions)
-import qualified SenaVN.Session as Session
+import SenaVN.Session qualified as Session
 import SenaVN.Stats (LibraryStats (..), computeStats, effectivePlayed)
 import SenaVN.System (openEditor, openGameGuide, openGameSave, spawnDaemon)
 import SenaVN.Types
@@ -65,6 +65,7 @@ import SenaVN.Utils
     now,
     truncateText,
   )
+import SenaVN.Version (appAuthor, appHomepage, appLicense, appVersion)
 
 -- | Top-level subcommand categories in the navigation tree
 data SubCategory
@@ -125,18 +126,31 @@ attrCyan = attrName "cyan"
 attrYellow = attrName "yellow"
 attrMagenta = attrName "magenta"
 attrStatus = attrName "status"
+
 attrHeaderLogo = attrName "headerLogo"
+
 attrHeaderAccent = attrName "headerAccent"
+
 attrHeaderBrand = attrName "headerBrand"
+
 attrBadgeKey = attrName "badgeKey"
+
 attrBadgeVal = attrName "badgeVal"
+
 attrBadgeGreen = attrName "badgeGreen"
+
 attrBadgeCyan = attrName "badgeCyan"
+
 attrBadgeYellow = attrName "badgeYellow"
+
 attrBadgeMagenta = attrName "badgeMagenta"
+
 attrBadgeDim = attrName "badgeDim"
+
 attrBadgeTag = attrName "badgeTag"
+
 attrStar = attrName "star"
+
 attrBranch = attrName "branch"
 
 theMap :: AttrMap
@@ -227,10 +241,10 @@ drawHeader s =
       brand =
         withAttr attrHeaderLogo (txt " ❖ SENA")
           <+> withAttr attrHeaderAccent (txt "VN ")
-          <+> withAttr attrDim (txt "·  v2.0.0")
+          <+> withAttr attrDim (txt ("·  v" <> appVersion <> " by " <> appAuthor))
 
       tagline =
-        withAttr attrDim (txt "Terminal Visual Novel Library & Playtime Tracker")
+        withAttr attrDim (txt ("Terminal Visual Novel Library · " <> appHomepage))
 
       brandBlock =
         brand <=> padLeft (Pad 1) tagline
@@ -403,7 +417,9 @@ drawCategoryStatsOverview s =
       card cardTitle lines_ =
         hLimit 26 $
           borderWithLabel (withAttr attrTitle (txt (" " <> cardTitle <> " "))) $
-            padLeft (Pad 1) $ padRight (Pad 1) $ vBox lines_
+            padLeft (Pad 1) $
+              padRight (Pad 1) $
+                vBox lines_
 
       metricRow lbl val =
         hBox [withAttr attrDim (txt lbl), padLeft Max (withAttr attrCyan (txt val))]
@@ -446,13 +462,13 @@ drawCategoryStatsOverview s =
               ]
 
       topHeader = padTop (Pad 1) $ withAttr attrTitle (txt "Top Played Titles (Relative Activity):") <=> hBorder
-      topBox = vBox (map renderTopRow (zip [1 ..] topGames))
+      topBox = vBox (zipWith (curry renderTopRow) [1 ..] topGames)
    in padLeft (Pad 2) $ padRight (Pad 2) $ hdr <=> cardsBox <=> topHeader <=> topBox
 
 -- | Overview for Timeline
 drawCategoryTimelineOverview :: AppState -> Widget ResourceName
 drawCategoryTimelineOverview s =
-  let allTimelines = concatMap (\gwl -> map (\tl -> (gwl, tl)) gwl.game.playTimelines) s.games
+  let allTimelines = concatMap (\gwl -> map (gwl,) gwl.game.playTimelines) s.games
       sortedRecent = take 14 (sortOn (Down . (\(_, tl) -> tl.start)) allTimelines)
       totalDur = sum (map (\(_, tl) -> tl.duration) sortedRecent)
       hdr =
@@ -489,7 +505,18 @@ drawCategoryConfigOverview s =
             txt (maskSensitive k v)
           ]
       cfgList = if null s.configs then withAttr attrDim (txt "No configuration settings found.") else vBox (map renderCfg s.configs)
-   in padLeft (Pad 2) $ hdr <=> cfgList
+      aboutBlock =
+        padTop (Pad 1) $
+          borderWithLabel (withAttr attrTitle (txt " About SenaVN ")) $
+            padLeft (Pad 1) $
+              padRight (Pad 1) $
+                vBox
+                  [ hBox [withAttr attrDim (txt "Project  : "), withAttr attrCyan (txt ("SenaVN v" <> appVersion))],
+                    hBox [withAttr attrDim (txt "Author   : "), txt appAuthor],
+                    hBox [withAttr attrDim (txt "Homepage : "), withAttr attrCyan (txt appHomepage)],
+                    hBox [withAttr attrDim (txt "License  : "), txt appLicense]
+                  ]
+   in padLeft (Pad 2) $ padRight (Pad 2) $ hdr <=> cfgList <=> aboutBlock
 
 -- | Game Details Card (like sena info)
 drawGameInfoCard :: AppState -> GameWithLocal -> Widget ResourceName

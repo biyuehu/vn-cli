@@ -3,6 +3,7 @@
 module Main where
 
 import Control.Exception (SomeException, catch, fromException, throwIO)
+import Data.Text qualified as T
 import Data.Word (Word32)
 import Options.Applicative
 import Prettyprinter
@@ -11,6 +12,7 @@ import SenaVN.Command (Command (Tui), commandParser)
 import SenaVN.Core (Env (Env), renderSenaErrorDoc, runRomi)
 import SenaVN.DB (withDB)
 import SenaVN.Handler (handle)
+import SenaVN.Version (appAuthor, appHomepage, appLicense, appVersionStr)
 import System.Environment (getArgs)
 import System.Exit (ExitCode (..), exitFailure, exitSuccess, exitWith)
 import System.IO (hPutStr, hSetEncoding, stderr, stdout, utf8)
@@ -64,10 +66,30 @@ main = do
           exitFailure
         Right () -> pure ()
 
+    versionOpt =
+      infoOption
+        ( "sena "
+            <> appVersionStr
+            <> "\nAuthor: "
+            <> T.unpack appAuthor
+            <> "\nHomepage: "
+            <> T.unpack appHomepage
+            <> "\nLicense: "
+            <> T.unpack appLicense
+        )
+        ( long "version"
+            <> short 'v'
+            <> help "Show version and author information"
+        )
+
     opts =
       info
-        (commandParser <**> helper)
-        (fullDesc <> progDesc "sena — gal library manager")
+        (commandParser <**> helper <**> versionOpt)
+        ( fullDesc
+            <> header ("sena " <> appVersionStr <> " — Terminal Visual Novel Library & Playtime Tracker")
+            <> progDesc "A modern CLI & TUI galgame/visual novel management tool."
+            <> footer ("Author: " <> T.unpack appAuthor <> " · " <> T.unpack appHomepage)
+        )
 
     parserPrefs =
       prefs
