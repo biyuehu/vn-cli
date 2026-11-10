@@ -90,3 +90,19 @@ executable SenaVN
   hs-source-dirs: app
   ghc-options: -threaded
   build-depends: SenaVN
+
+test-suite spec
+  import: shared-properties
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  other-modules:
+    Test.ConfigSpec
+    Test.DBSpec
+    Test.Framework
+    Test.StatsSpec
+    Test.SyncSpec
+    Test.TypesSpec
+    Test.UtilsSpec
+  hs-source-dirs: test
+  ghc-options: -threaded
+  build-depends: SenaVN
