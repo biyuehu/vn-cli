@@ -170,13 +170,13 @@ theMap =
       (attrHeaderAccent, V.withStyle (fg V.cyan) V.bold),
       (attrHeaderBrand, V.withStyle (fg V.cyan) V.bold),
       (attrBadgeKey, V.withStyle (fg V.black `V.withBackColor` V.cyan) V.bold),
-      (attrBadgeVal, V.withStyle (fg (V.rgbColor (220 :: Int) (220 :: Int) (220 :: Int)) `V.withBackColor` (V.rgbColor (45 :: Int) (45 :: Int) (45 :: Int))) V.bold),
+      (attrBadgeVal, V.withStyle (fg (V.rgbColor (220 :: Int) (220 :: Int) (220 :: Int)) `V.withBackColor` V.rgbColor (45 :: Int) (45 :: Int) (45 :: Int)) V.bold),
       (attrBadgeGreen, V.withStyle (fg V.black `V.withBackColor` V.green) V.bold),
       (attrBadgeCyan, V.withStyle (fg V.black `V.withBackColor` V.cyan) V.bold),
       (attrBadgeYellow, V.withStyle (fg V.black `V.withBackColor` V.yellow) V.bold),
       (attrBadgeMagenta, V.withStyle (fg V.black `V.withBackColor` V.magenta) V.bold),
-      (attrBadgeDim, V.withStyle (fg (V.rgbColor (180 :: Int) (180 :: Int) (180 :: Int)) `V.withBackColor` (V.rgbColor (45 :: Int) (45 :: Int) (45 :: Int))) V.bold),
-      (attrBadgeTag, V.withStyle (fg V.cyan `V.withBackColor` (V.rgbColor (35 :: Int) (45 :: Int) (55 :: Int))) V.bold),
+      (attrBadgeDim, V.withStyle (fg (V.rgbColor (180 :: Int) (180 :: Int) (180 :: Int)) `V.withBackColor` V.rgbColor (45 :: Int) (45 :: Int) (45 :: Int)) V.bold),
+      (attrBadgeTag, V.withStyle (fg V.cyan `V.withBackColor` V.rgbColor (35 :: Int) (45 :: Int) (55 :: Int)) V.bold),
       (attrStar, V.withStyle (fg V.yellow) V.bold),
       (attrBranch, fg (V.rgbColor (100 :: Int) (100 :: Int) (100 :: Int)))
     ]
@@ -187,13 +187,11 @@ getVisibleItems s =
   let q = T.toLower (T.strip s.filterQuery)
       matchesQuery :: GameWithLocal -> Bool
       matchesQuery gwl =
-        if T.null q
-          then True
-          else
-            q `T.isInfixOf` T.toLower gwl.game.title
-              || any (\a -> q `T.isInfixOf` T.toLower a) gwl.game.alias
-              || q `T.isInfixOf` T.toLower gwl.game.coreId.unGameId
-              || any (\t -> q `T.isInfixOf` T.toLower t) gwl.game.tags
+        T.null q
+          || q `T.isInfixOf` T.toLower gwl.game.title
+          || any (\a -> q `T.isInfixOf` T.toLower a) gwl.game.alias
+          || q `T.isInfixOf` T.toLower gwl.game.coreId.unGameId
+          || any (\t -> q `T.isInfixOf` T.toLower t) gwl.game.tags
 
       filteredGames = filter matchesQuery s.games
       playedGamesList = sortOn (Down . effectivePlayed) (filter (\g -> effectivePlayed g > 0) filteredGames)
