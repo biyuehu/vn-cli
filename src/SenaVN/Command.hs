@@ -325,7 +325,7 @@ commandParser =
     rmParser =
       Remove
         <$> argument str (metavar "ID" <> help "Game ID to remove" <> completer gameIdCompleter)
-        <*> switch (long "hard" <> short 'H' <> help "Also remove from cloud")
+        <*> switch (long "hard" <> short 'H' <> help "Permanently remove and mark for cloud deletion (record tombstone)")
 
     mvParser =
       Move

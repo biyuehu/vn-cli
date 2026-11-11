@@ -108,6 +108,20 @@ handleAdd Add {addName, addCoreId, addPath, addNoFetch, addSkip, addOrder, addKe
   conn <- askConn
   existing <- liftIO $ DB.getGame conn addCoreId
   when (isJust existing) $ throwR (GameAlreadyExists addCoreId)
+  isTomb <- liftIO $ DB.isTombstoned conn addCoreId
+  when isTomb $ do
+    confirmed <-
+      if addSkip
+        then pure True
+        else
+          liftIO $
+            askConfirmation
+              ( "Game ID"
+                  <+> annotate (color Cyan <> bold) (pretty ("#" <> addCoreId.unGameId))
+                  <+> "was previously deleted. Reusing this ID will resurrect it and clear its tombstone. Continue?"
+              )
+    unless confirmed $
+      throwR (GameAlreadyExists addCoreId)
   ts <- liftIO now
   let base = emptyGameCore addCoreId addName ts
 
@@ -185,17 +199,20 @@ handleRemove Remove {removeCoreId, removeHard} = do
       askConfirmation
         ( "Are you sure you want to delete"
             <+> bold_ (white_ (pretty ("'" <> g.title <> "'")))
-            <> "?"
+            <> if removeHard
+              then " permanently (including cloud sync)?"
+              else " from local library?"
         )
   if not confirmed
     then liftIO $ printLn (annotate (color Yellow) "!" <+> dim_ "operation cancelled.")
     else liftIO $ do
-      DB.deleteGame conn removeCoreId
+      DB.deleteGame conn removeCoreId removeHard
       Session.deleteSession removeCoreId
       ok $
         bold_ (white_ (pretty g.title))
-          <+> dim_ "removed."
-          <> if removeHard then dim_ " (TODO: cloud remove)" else mempty
+          <+> if removeHard
+            then dim_ "permanently removed (tombstone marked for cloud deletion)."
+            else dim_ "removed from local library."
 handleRemove _ = pure ()
 
 handleMove :: Command -> Romi ()
@@ -211,6 +228,17 @@ handleMove Move {moveOldId, moveNewId} = do
   existingNew <- liftIO $ DB.getGame conn moveNewId
   when (isJust existingNew) $
     throwR (GameAlreadyExists moveNewId)
+  isTomb <- liftIO $ DB.isTombstoned conn moveNewId
+  when isTomb $ do
+    confirmed <-
+      liftIO $
+        askConfirmation
+          ( "Game ID"
+              <+> annotate (color Cyan <> bold) (pretty ("#" <> moveNewId.unGameId))
+              <+> "was previously deleted. Reusing this ID will resurrect it and clear its tombstone. Continue?"
+          )
+    unless confirmed $
+      throwR (InvalidNewGameId moveNewId "operation cancelled")
   mRunning <- liftIO $ Session.readSession moveOldId
   case mRunning of
     Just sess -> do

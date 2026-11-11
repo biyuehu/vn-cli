@@ -11,6 +11,7 @@ module SenaVN.DB
     insertGame,
     updateGame,
     deleteGame,
+    isTombstoned,
     getDeletedGames,
     clearTombstone,
     recordDeletedGame,
@@ -35,6 +36,7 @@ module SenaVN.DB
 where
 
 import Control.Exception (bracket)
+import Control.Monad (when)
 import Data.Aeson (FromJSON, ToJSON, decode, encode)
 import qualified Data.ByteString.Lazy as BL
 import Data.Foldable (forM_)
@@ -280,6 +282,7 @@ getAllGamesWithLocal conn = do
 insertGame :: Connection -> GameCore -> IO ()
 insertGame conn g = withTransaction conn $ do
   let gid = g.coreId.unGameId
+  execute conn "DELETE FROM deleted_games WHERE id=?" (Only gid)
   execute
     conn
     "INSERT INTO games\
@@ -334,15 +337,21 @@ updateGame conn g = withTransaction conn $ do
            )
     )
 
-deleteGame :: Connection -> GameId -> IO ()
-deleteGame conn gid = withTransaction conn $ do
-  nowTs <- round <$> getPOSIXTime
-  execute
-    conn
-    "INSERT INTO deleted_games (id, deleted_at) VALUES (?, ?)\
-    \ ON CONFLICT(id) DO UPDATE SET deleted_at=excluded.deleted_at"
-    (gid, nowTs :: Int)
+deleteGame :: Connection -> GameId -> Bool -> IO ()
+deleteGame conn gid isHard = withTransaction conn $ do
+  when isHard $ do
+    nowTs <- round <$> getPOSIXTime
+    execute
+      conn
+      "INSERT INTO deleted_games (id, deleted_at) VALUES (?, ?)\
+      \ ON CONFLICT(id) DO UPDATE SET deleted_at=excluded.deleted_at"
+      (gid, nowTs :: Int)
   execute conn "DELETE FROM games WHERE id=?" (Only gid)
+
+isTombstoned :: Connection -> GameId -> IO Bool
+isTombstoned conn gid = do
+  rows <- query conn "SELECT 1 FROM deleted_games WHERE id=? LIMIT 1" (Only gid) :: IO [Only Int]
+  pure (not (null rows))
 
 getDeletedGames :: Connection -> IO [(GameId, Int)]
 getDeletedGames conn =
@@ -468,6 +477,12 @@ renameGame conn oldId newId ts = withTransaction conn $ do
     conn
     "UPDATE play_sessions SET id=? || '-' || start_time, game_id=? WHERE game_id=?"
     (newId, newId, oldId)
+  execute conn "DELETE FROM deleted_games WHERE id=?" (Only newId)
+  execute
+    conn
+    "INSERT INTO deleted_games (id, deleted_at) VALUES (?, ?)\
+    \ ON CONFLICT(id) DO UPDATE SET deleted_at=excluded.deleted_at"
+    (oldId, ts)
 
 getAllConfigs :: Connection -> IO [(Text, Text)]
 getAllConfigs conn =

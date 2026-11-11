@@ -72,11 +72,11 @@ tombstoneTests :: Test
 tombstoneTests =
   testGroup
     "Tombstone Lifecycle"
-    [ testCase "deleteGame records a tombstone in deleted_games" $
+    [ testCase "deleteGame with hard flag records a tombstone in deleted_games" $
         withMemDB $ \conn -> do
           let g = makeGame "g_del" "To Delete"
           insertGame conn g
-          deleteGame conn (GameId "g_del")
+          deleteGame conn (GameId "g_del") True
 
           mGame <- getGame conn (GameId "g_del")
           assertEqual "game deleted" Nothing mGame
@@ -85,15 +85,60 @@ tombstoneTests =
           case tombs of
             [(gid, _)] -> assertEqual "tombstone id" (GameId "g_del") gid
             _ -> fail "Expected exactly 1 tombstone",
+      testCase "deleteGame without hard flag deletes locally without recording tombstone" $
+        withMemDB $ \conn -> do
+          let g = makeGame "g_soft" "To Soft Delete"
+          insertGame conn g
+          deleteGame conn (GameId "g_soft") False
+
+          mGame <- getGame conn (GameId "g_soft")
+          assertEqual "game deleted" Nothing mGame
+
+          tombs <- getDeletedGames conn
+          assertEqual "no tombstone recorded" 0 (length tombs),
       testCase "clearTombstone removes tombstone record" $
         withMemDB $ \conn -> do
           let g = makeGame "g_clear" "To Clear"
           insertGame conn g
-          deleteGame conn (GameId "g_clear")
+          deleteGame conn (GameId "g_clear") True
           clearTombstone conn (GameId "g_clear")
 
           tombs <- getDeletedGames conn
-          assertEqual "tombstones empty" 0 (length tombs)
+          assertEqual "tombstones empty" 0 (length tombs),
+      testCase "insertGame automatically clears existing tombstone" $
+        withMemDB $ \conn -> do
+          recordDeletedGame conn (GameId "g_reborn") 1000
+          tombBefore <- isTombstoned conn (GameId "g_reborn")
+          assertTrue "tombstone exists before insert" tombBefore
+
+          let g = makeGame "g_reborn" "Reborn Game"
+          insertGame conn g
+
+          tombAfter <- isTombstoned conn (GameId "g_reborn")
+          assertFalse "tombstone cleared after insert" tombAfter,
+      testCase "renameGame clears tombstone for newId and records tombstone for oldId" $
+        withMemDB $ \conn -> do
+          recordDeletedGame conn (GameId "id1") 1000
+          let g = makeGame "id2" "Game To Rename"
+          insertGame conn g
+
+          renameGame conn (GameId "id2") (GameId "id1") 2000
+
+          -- id1 should exist and not be tombstoned
+          mG1 <- getGame conn (GameId "id1")
+          case mG1 of
+            Nothing -> fail "id1 does not exist after rename"
+            Just g1 -> assertEqual "id1 title" "Game To Rename" g1.title
+
+          id1Tomb <- isTombstoned conn (GameId "id1")
+          assertFalse "id1 tombstone cleared" id1Tomb
+
+          -- id2 should not exist and be tombstoned
+          mG2 <- getGame conn (GameId "id2")
+          assertEqual "id2 deleted" Nothing mG2
+
+          id2Tomb <- isTombstoned conn (GameId "id2")
+          assertTrue "id2 tombstone recorded" id2Tomb
     ]
 
 configTests :: Test
