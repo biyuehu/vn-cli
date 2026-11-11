@@ -8,7 +8,7 @@ on:
 
 jobs:
   rust:
-    name: Rust Check (sena-guard)
+    name: Rust Check & Build (sena-guard)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,9 +30,17 @@ jobs:
       - name: Build Release
         run: cargo build --release
 
+      - name: Upload sena-guard Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sena-guard
+          path: target/release/sena-guard.exe
+          if-no-files-found: error
+
   haskell:
-    name: Haskell Check (sena)
+    name: Haskell Check & Build (sena)
     runs-on: windows-latest
+    needs: rust
     steps:
       - uses: actions/checkout@v4
 
@@ -57,3 +65,31 @@ jobs:
 
       - name: Cabal Build
         run: cabal build --enable-tests --ghc-options="-Werror"
+
+      - name: Cabal Test
+        run: cabal test --test-show-details=direct
+
+      - name: Download sena-guard
+        uses: actions/download-artifact@v4
+        with:
+          name: sena-guard
+          path: staging
+
+      - name: Stage Binaries
+        shell: pwsh
+        run: |
+          $senaExe = Get-ChildItem -Path "dist-newstyle" -Filter "SenaVN.exe" -Recurse | Select-Object -First 1
+          if (-not $senaExe) {
+            Write-Error "SenaVN.exe not found in dist-newstyle"
+            exit 1
+          }
+          Copy-Item -Path $senaExe.FullName -Destination "staging/sena.exe"
+          Copy-Item -Path $senaExe.FullName -Destination "staging/SenaVN.exe"
+          Get-ChildItem -Path "staging"
+
+      - name: Upload Release Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sena-windows-x64
+          path: staging/*
+          if-no-files-found: error
