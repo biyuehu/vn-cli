@@ -2,6 +2,8 @@
 
 <div align="center">
 
+打开Windows窗口选择 或者尝试别的快速方案
+
 # SenaVN | GalKeeper 2.0
 
 **A terminal-first Visual Novel library manager, gameplay tracker, and GitHub cloud synchronizer.**
