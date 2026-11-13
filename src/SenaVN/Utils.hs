@@ -18,7 +18,7 @@ module SenaVN.Utils
   )
 where
 
-import Control.Exception (IOException, try)
+import Control.Exception (IOException, SomeException, catch, try)
 import Data.Bits ((.&.), (.|.), shiftL, shiftR)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BC
@@ -29,6 +29,7 @@ import qualified Data.Text as T
 import Data.Time (defaultTimeLocale, formatTime)
 import Data.Time.Clock.POSIX (getPOSIXTime, posixSecondsToUTCTime)
 import Data.Word (Word8)
+import SenaVN.ConsoleSize (getConsoleWidth)
 import SenaVN.Types (Seconds)
 import System.Directory (createDirectoryIfMissing, getHomeDirectory, removeFile)
 import System.Environment (lookupEnv)
@@ -144,11 +145,15 @@ getTermWidth :: IO Int
 getTermWidth = do
   mEnvCols <- lookupEnv "COLUMNS"
   let parsedEnv = mEnvCols >>= readMaybe
-  pure $ case parsedEnv of
-    Just cols | cols > 0 -> clamp cols
-    _ -> 88
+  case parsedEnv of
+    Just cols | cols > 0 -> pure (clamp cols)
+    _ -> do
+      mWinCols <- (getConsoleWidth >>= pure) `catch` \(_ :: SomeException) -> pure Nothing
+      pure $ case mWinCols of
+        Just w | w > 0 -> clamp w
+        _ -> 80
   where
-    clamp c = max 60 (min 160 (c - 1))
+    clamp c = max 60 (min 260 (c - 1))
 
 base64Table :: BS.ByteString
 base64Table = BC.pack "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"

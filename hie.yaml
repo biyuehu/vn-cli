@@ -75,6 +75,7 @@ cradle:
               - "SenaVN"
               - "SenaVN.Api"
               - "SenaVN.Command"
+              - "SenaVN.ConsoleSize"
               - "SenaVN.Core"
               - "SenaVN.DB"
               - "SenaVN.Error"
