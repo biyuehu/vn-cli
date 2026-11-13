@@ -20,6 +20,8 @@ module SenaVN.Pretty
     getTermWidth,
     calcColumns,
     ListColumns (..),
+    Breakpoint (..),
+    getBreakpoint,
     effectivePlayed,
     bold_,
     cyan_,
@@ -166,6 +168,13 @@ prettyTimelineGraphW w items =
               <+> bold_ (white_ (pretty ("session " <> startFull)))
               <+> dim_ ("(" <> pretty dayOfWeek <> ", " <> pretty it.itemRelative <> ")")
 
+          p = getBreakpoint w
+          barW = case p of
+            Sm -> 10
+            Md -> 14
+            Lg -> 20
+            Xl -> 28
+
           gameLine =
             dim_ "| "
               <> dim_ "Game:     "
@@ -173,21 +182,37 @@ prettyTimelineGraphW w items =
               <+> annotate (color Magenta) (pretty ("(#" <> it.itemGameId.unGameId <> ")"))
 
           timeLine =
-            dim_ "| "
-              <> dim_ "Duration: "
-              <> timeRange
-              <+> dim_ "·"
-              <+> green_ (pretty (fmtSecStr tl.duration))
+            if p >= Lg
+              then
+                dim_ "| "
+                  <> dim_ "Duration: "
+                  <> timeRange
+                  <+> dim_ "·"
+                  <+> green_ (pretty (fmtSecStr tl.duration))
+                  <+> dim_ "·  Accum:"
+                  <+> pretty (fmtSecStr it.itemAccumSec)
+                  <> (if it.itemExpectedMin > 0 then dim_ " / " <> fmtMinutes it.itemExpectedMin else mempty)
+                  <+> progressBar barW it.itemAccumSec it.itemExpectedMin
+              else
+                dim_ "| "
+                  <> dim_ "Duration: "
+                  <> timeRange
+                  <+> dim_ "·"
+                  <+> green_ (pretty (fmtSecStr tl.duration))
 
           progressLine =
-            dim_ "| "
-              <> dim_ "Progress: "
-              <> pretty (fmtSecStr it.itemAccumSec)
-              <> (if it.itemExpectedMin > 0 then dim_ " / " <> fmtMinutes it.itemExpectedMin else mempty)
-              <+> progressBar 14 it.itemAccumSec it.itemExpectedMin
+            if p >= Lg
+              then emptyDoc
+              else
+                dim_ "| "
+                  <> dim_ "Progress: "
+                  <> pretty (fmtSecStr it.itemAccumSec)
+                  <> (if it.itemExpectedMin > 0 then dim_ " / " <> fmtMinutes it.itemExpectedMin else mempty)
+                  <+> progressBar barW it.itemAccumSec it.itemExpectedMin
 
           spacing = dim_ "|"
-       in [header, gameLine, timeLine, progressLine, spacing]
+          lines' = [header, gameLine, timeLine] ++ [progressLine | p < Lg] ++ [spacing]
+       in lines'
 
 prettyTimelineOnelineW :: Int -> [TimelineItem] -> Doc AnsiStyle
 prettyTimelineOnelineW _ [] = dim_ "  no recorded play sessions."
@@ -213,13 +238,23 @@ prettyTimelineOnelineW w items =
               else ""
           progressCol = accumStr <> pctStr
           idCol = it.itemGameId.unGameId
-          fixedW = 2 + 16 + 1 + 9 + 1 + 9 + 1 + 16 + 1
+          p = getBreakpoint maxW
+          idW = if p >= Lg then 12 else 9
+          durW = 9
+          progW = if p >= Lg then 18 else 16
+          barDoc =
+            if p >= Lg
+              then " " <> progressBar 8 it.itemAccumSec it.itemExpectedMin
+              else emptyDoc
+          barW = if p >= Lg then 15 else 0
+          fixedW = 2 + 16 + 1 + idW + 1 + durW + 1 + progW + barW + 1
           titleW = max 15 (maxW - fixedW)
        in yellow_ "*"
             <+> dim_ (pretty startShort)
-            <+> fill 9 (annotate (color Magenta) (pretty idCol))
-            <+> fill 9 (green_ (pretty durStr))
-            <+> fill 16 (cyan_ (pretty progressCol))
+            <+> fill idW (annotate (color Magenta) (pretty idCol))
+            <+> fill durW (green_ (pretty durStr))
+            <+> fill progW (cyan_ (pretty progressCol))
+            <> barDoc
             <+> bold_ (white_ (truncated titleW it.itemTitle))
 
 ratingDoc :: Double -> Doc AnsiStyle
@@ -280,72 +315,184 @@ statusDot gwl
       annotate (color Cyan) "✔"
   | otherwise = green_ "●"
 
+data Breakpoint = Sm | Md | Lg | Xl
+  deriving (Show, Eq, Ord)
+
+getBreakpoint :: Int -> Breakpoint
+getBreakpoint w
+  | w < 90 = Sm
+  | w < 120 = Md
+  | w < 160 = Lg
+  | otherwise = Xl
+
 data ListColumns = ListColumns
   { colId :: !Int,
     colTitle :: !Int,
     colDev :: !Int,
     colPlayed :: !Int,
     colProgress :: !Int,
+    colBarWidth :: !Int,
     colLastPlay :: !Int,
-    colRating :: !Int
+    colRating :: !Int,
+    colVndb :: !Int,
+    colRelease :: !Int,
+    colTags :: !Int,
+    bp :: !Breakpoint
   }
   deriving (Show)
 
 calcColumns :: Int -> ListColumns
 calcColumns w =
-  let idW = 8
-      fixedW = idW + 48
-      dynamicW = max 24 (w - fixedW)
-      devW = max 10 (min 22 (dynamicW `div` 3))
-      titleW = dynamicW - devW
-   in ListColumns
-        { colId = idW,
-          colTitle = titleW,
-          colDev = devW,
-          colPlayed = 9,
-          colProgress = 14,
-          colLastPlay = 10,
-          colRating = 6
-        }
+  let p = getBreakpoint w
+      ratingW = 6
+      playedW = 9
+      lastPlayW = 10
+   in case p of
+        Sm ->
+          let idW = 10
+              progW = 10
+              fixedW = idW + playedW + progW + ratingW + 8
+              availW = max 20 (w - fixedW)
+              devW = max 8 (min 16 (availW `div` 3))
+              titleW = availW - devW
+           in ListColumns
+                { colId = idW,
+                  colTitle = titleW,
+                  colDev = devW,
+                  colPlayed = playedW,
+                  colProgress = progW,
+                  colBarWidth = 5,
+                  colLastPlay = 0,
+                  colRating = ratingW,
+                  colVndb = 0,
+                  colRelease = 0,
+                  colTags = 0,
+                  bp = Sm
+                }
+        Md ->
+          let idW = 14
+              progW = 14
+              fixedW = idW + playedW + progW + lastPlayW + ratingW + 10
+              availW = max 30 (w - fixedW)
+              devW = max 14 (min 28 (availW `div` 3))
+              titleW = availW - devW
+           in ListColumns
+                { colId = idW,
+                  colTitle = titleW,
+                  colDev = devW,
+                  colPlayed = playedW,
+                  colProgress = progW,
+                  colBarWidth = 8,
+                  colLastPlay = lastPlayW,
+                  colRating = ratingW,
+                  colVndb = 0,
+                  colRelease = 0,
+                  colTags = 0,
+                  bp = Md
+                }
+        Lg ->
+          let idW = 20
+              progW = 16
+              fixedW = idW + playedW + progW + lastPlayW + ratingW + 12
+              availW = max 45 (w - fixedW)
+              devW = max 24 (min 40 (availW `div` 3))
+              titleW = availW - devW
+           in ListColumns
+                { colId = idW,
+                  colTitle = titleW,
+                  colDev = devW,
+                  colPlayed = playedW,
+                  colProgress = progW,
+                  colBarWidth = 10,
+                  colLastPlay = lastPlayW,
+                  colRating = ratingW,
+                  colVndb = 0,
+                  colRelease = 0,
+                  colTags = 0,
+                  bp = Lg
+                }
+        Xl ->
+          let idW = 26
+              progW = 18
+              releaseW = 10
+              fixedBase = idW + playedW + progW + releaseW + lastPlayW + ratingW + 14
+              availW = max 60 (w - fixedBase)
+              devW = max 32 (min 50 (availW `div` 3))
+              titleW = availW - devW
+           in ListColumns
+                { colId = idW,
+                  colTitle = titleW,
+                  colDev = devW,
+                  colPlayed = playedW,
+                  colProgress = progW,
+                  colBarWidth = 12,
+                  colLastPlay = lastPlayW,
+                  colRating = ratingW,
+                  colVndb = 0,
+                  colRelease = releaseW,
+                  colTags = 0,
+                  bp = Xl
+                }
 
 prettyGameRow :: ListColumns -> GameWithLocal -> Doc AnsiStyle
 prettyGameRow cols gwl =
-  statusDot gwl
-    <+> fill cols.colId (annotate (color Magenta) (truncated cols.colId gwl.game.coreId.unGameId))
-    <+> fill cols.colTitle (bold_ (truncated cols.colTitle gwl.game.title))
-    <+> fill cols.colDev (dim_ (truncated cols.colDev gwl.game.developer))
-    <+> fill cols.colPlayed playedDoc
-    <+> fill cols.colProgress (progressBar 8 played gwl.game.expectedPlayTime)
-    <+> fill cols.colLastPlay lastPlayDoc
-    <+> ratingCol
-  where
-    played = effectivePlayed gwl
-    playedDoc = case gwl.running of
-      Just _ -> annotate (color Green <> bold) (pretty (fmtSecStr played))
-      Nothing -> fmtSeconds played
-    lastPlayDoc = case gwl.running of
-      Just _ -> annotate (color Green <> bold) "now"
-      Nothing -> fmtDate gwl.game.lastPlay
-    ratingCol
-      | gwl.game.rating <= 0 = dim_ "—"
-      | otherwise =
-          let score = if gwl.game.rating > 10 then gwl.game.rating / 10 else gwl.game.rating
-              intPart = floor score :: Int
-              decPart = round ((score - fromIntegral intPart) * 10) :: Int
-              scoreStr = if decPart == 0 then show intPart else show intPart <> "." <> show decPart
-           in yellow_ ("★ " <> pretty scoreStr)
+  let idDoc = fill cols.colId (annotate (color Magenta) (truncated cols.colId gwl.game.coreId.unGameId))
+      titleDoc = fill cols.colTitle (bold_ (truncated cols.colTitle gwl.game.title))
+      devDoc = fill cols.colDev (dim_ (truncated cols.colDev gwl.game.developer))
+      played = effectivePlayed gwl
+      playedDoc = case gwl.running of
+        Just _ -> annotate (color Green <> bold) (pretty (fmtSecStr played))
+        Nothing -> fmtSeconds played
+      playCol = fill cols.colPlayed playedDoc
+      progCol = fill cols.colProgress (progressBar cols.colBarWidth played gwl.game.expectedPlayTime)
+      relCol =
+        if cols.colRelease > 0
+          then fill cols.colRelease (fmtDate gwl.game.releaseDate) <> " "
+          else emptyDoc
+      lastPlayDoc = case gwl.running of
+        Just _ -> annotate (color Green <> bold) "now"
+        Nothing -> fmtDate gwl.game.lastPlay
+      lastCol =
+        if cols.colLastPlay > 0
+          then fill cols.colLastPlay lastPlayDoc <> " "
+          else emptyDoc
+      ratingCol
+        | gwl.game.rating <= 0 = dim_ "—"
+        | otherwise =
+            let score = if gwl.game.rating > 10 then gwl.game.rating / 10 else gwl.game.rating
+                intPart = floor score :: Int
+                decPart = round ((score - fromIntegral intPart) * 10) :: Int
+                scoreStr = if decPart == 0 then show intPart else show intPart <> "." <> show decPart
+             in yellow_ ("★ " <> pretty scoreStr)
+   in statusDot gwl
+        <+> idDoc
+        <+> titleDoc
+        <+> devDoc
+        <+> playCol
+        <+> progCol
+        <+> relCol
+        <> lastCol
+        <> ratingCol
 
 listHeader :: ListColumns -> Doc AnsiStyle
 listHeader cols =
-  dim_ $
-    pretty ("  " :: Text)
-      <> fill cols.colId "id"
-      <+> fill cols.colTitle "title"
-      <+> fill cols.colDev "developer"
-      <+> fill cols.colPlayed "played"
-      <+> fill cols.colProgress "progress"
-      <+> fill cols.colLastPlay "last play"
-      <+> "rating"
+  let idDoc = fill cols.colId "id"
+      titleDoc = fill cols.colTitle "title"
+      devDoc = fill cols.colDev "developer"
+      playDoc = fill cols.colPlayed "played"
+      progDoc = fill cols.colProgress "progress"
+      relDoc = if cols.colRelease > 0 then fill cols.colRelease "release" <> " " else emptyDoc
+      lastDoc = if cols.colLastPlay > 0 then fill cols.colLastPlay "last play" <> " " else emptyDoc
+   in dim_ $
+        pretty ("  " :: Text)
+          <> idDoc
+          <+> titleDoc
+          <+> devDoc
+          <+> playDoc
+          <+> progDoc
+          <+> relDoc
+          <> lastDoc
+          <> "rating"
 
 prettyGamesW :: Int -> [GameWithLocal] -> Doc AnsiStyle
 prettyGamesW _ [] = dim_ "  no games in library."
@@ -374,23 +521,9 @@ prettyGameDetailW w gwl =
       bold_ (white_ (pretty gwl.game.title))
         <+> dim_ (pretty ("#" <> gwl.game.coreId.unGameId)),
       aliasLine,
-      ruleW w,
-      kv kw "status" statusLine,
-      kv kw "vndb" vndbLine,
-      kv kw "developer" (pretty gwl.game.developer),
-      kv kw "release" (fmtDate gwl.game.releaseDate),
-      kv kw "added" (fmtDate gwl.game.createDate),
-      kv kw "updated" (fmtDate gwl.game.updateDate),
-      emptyDoc,
-      kv kw "rating" (ratingDoc gwl.game.rating),
-      kv kw "expected" (fmtMinutes gwl.game.expectedPlayTime),
-      kv kw "played" playedLine,
-      kv kw "progress" (progressBar 16 played gwl.game.expectedPlayTime),
-      kv kw "last play" lastPlayLine,
-      kv kw "sessions" (pretty (length gwl.game.playTimelines + maybe 0 (const 1) gwl.running)),
-      emptyDoc,
-      kv kw "tags" (tagsList gwl.game.tags)
+      ruleW w
     ]
+      <> metaSections
       <> descSection
       <> sessionSection
       <> localSection
@@ -400,6 +533,49 @@ prettyGameDetailW w gwl =
   where
     kw = 10
     played = effectivePlayed gwl
+    p = getBreakpoint w
+
+    barW = case p of
+      Sm -> 12
+      Md -> 16
+      Lg -> 24
+      Xl -> 32
+
+    metaSections
+      | p >= Lg =
+          let col1W = max 32 ((w `div` 2) - 4)
+              r1 = fill col1W (kv kw "status" statusLine) <+> kv kw "rating" (ratingDoc gwl.game.rating)
+              r2 = fill col1W (kv kw "vndb" vndbLine) <+> kv kw "expected" (fmtMinutes gwl.game.expectedPlayTime)
+              r3 = fill col1W (kv kw "developer" (pretty gwl.game.developer)) <+> kv kw "played" playedLine
+              r4 = fill col1W (kv kw "release" (fmtDate gwl.game.releaseDate)) <+> kv kw "progress" (progressBar barW played gwl.game.expectedPlayTime)
+              r5 = fill col1W (kv kw "added" (fmtDate gwl.game.createDate)) <+> kv kw "last play" lastPlayLine
+              r6 = fill col1W (kv kw "updated" (fmtDate gwl.game.updateDate)) <+> kv kw "sessions" (pretty (length gwl.game.playTimelines + maybe 0 (const 1) gwl.running))
+           in [ r1,
+                r2,
+                r3,
+                r4,
+                r5,
+                r6,
+                emptyDoc,
+                kv kw "tags" (tagsList gwl.game.tags)
+              ]
+      | otherwise =
+          [ kv kw "status" statusLine,
+            kv kw "vndb" vndbLine,
+            kv kw "developer" (pretty gwl.game.developer),
+            kv kw "release" (fmtDate gwl.game.releaseDate),
+            kv kw "added" (fmtDate gwl.game.createDate),
+            kv kw "updated" (fmtDate gwl.game.updateDate),
+            emptyDoc,
+            kv kw "rating" (ratingDoc gwl.game.rating),
+            kv kw "expected" (fmtMinutes gwl.game.expectedPlayTime),
+            kv kw "played" playedLine,
+            kv kw "progress" (progressBar barW played gwl.game.expectedPlayTime),
+            kv kw "last play" lastPlayLine,
+            kv kw "sessions" (pretty (length gwl.game.playTimelines + maybe 0 (const 1) gwl.running)),
+            emptyDoc,
+            kv kw "tags" (tagsList gwl.game.tags)
+          ]
 
     statusLine = case gwl.running of
       Just liveSec -> annotate (color Green <> bold) "▶ running" <+> dim_ ("(session: " <> pretty (fmtSecStr liveSec) <> ")")
@@ -482,20 +658,37 @@ prettyFetchResultW w idx f =
         <> bold_ (white_ (pretty f.title))
         <+> dim_ (pretty f.vndbId),
       aliasLine,
-      ruleW w,
-      kv kw "developer" (pretty f.developer),
-      kv kw "release" (fmtDate f.releaseDate),
-      kv kw "rating" (ratingDoc f.rating),
-      kv kw "expected" (fmtHours f.expectedPlayHours),
-      kv kw "images" (pretty (show (length f.images) <> " image(s)")),
-      emptyDoc,
-      kv kw "tags" (tagsList f.tags)
+      ruleW w
     ]
+      <> metaSections
       <> descSection
       <> linksSection
       <> [ruleW w]
   where
     kw = 10
+    p = getBreakpoint w
+
+    metaSections
+      | p >= Lg =
+          let col1W = max 32 ((w `div` 2) - 4)
+              r1 = fill col1W (kv kw "developer" (pretty f.developer)) <+> kv kw "rating" (ratingDoc f.rating)
+              r2 = fill col1W (kv kw "release" (fmtDate f.releaseDate)) <+> kv kw "expected" (fmtHours f.expectedPlayHours)
+              r3 = fill col1W (kv kw "images" (pretty (show (length f.images) <> " image(s)")))
+           in [ r1,
+                r2,
+                r3,
+                emptyDoc,
+                kv kw "tags" (tagsList f.tags)
+              ]
+      | otherwise =
+          [ kv kw "developer" (pretty f.developer),
+            kv kw "release" (fmtDate f.releaseDate),
+            kv kw "rating" (ratingDoc f.rating),
+            kv kw "expected" (fmtHours f.expectedPlayHours),
+            kv kw "images" (pretty (show (length f.images) <> " image(s)")),
+            emptyDoc,
+            kv kw "tags" (tagsList f.tags)
+          ]
 
     aliasLine
       | null f.alias = emptyDoc
@@ -527,64 +720,90 @@ prettyLibraryStatsW :: Int -> [GameWithLocal] -> Doc AnsiStyle
 prettyLibraryStatsW w games =
   let s = computeStats games
       kw = 16
+      p = getBreakpoint w
       showPct n tot' =
         if tot' > 0 then show ((n * 100) `div` tot') <> "%" else "0%"
       topSection
         | null s.topPlayed = emptyDoc
         | otherwise =
             let maxSec = maximum (map snd s.topPlayed)
-                barMax = max 15 (min 35 (w - 55))
-                barLen sec = if maxSec > 0 then (sec * barMax) `div` maxSec else 0
-                titleW = max 20 (min 45 (w - barMax - 25))
+                barMax = case p of
+                  Sm -> 15
+                  Md -> 25
+                  Lg -> 40
+                  Xl -> 55
+                titleW = max 20 (w - barMax - 25)
                 row (idx, (gwl, sec)) =
-                  dim_ ("  " <> pretty (show idx <> ". "))
-                    <> fill titleW (bold_ (truncated titleW gwl.game.title))
-                    <+> fill 10 (fmtSeconds sec)
-                    <+> cyan_ (pretty (replicate (barLen sec) '█' <> replicate (barMax - barLen sec) '░'))
+                  let progDoc = progressBar barMax sec gwl.game.expectedPlayTime
+                      barDoc =
+                        if gwl.game.expectedPlayTime > 0
+                          then progDoc
+                          else
+                            let filled = if maxSec > 0 then (sec * barMax) `div` maxSec else 0
+                                bar = replicate filled '█' <> replicate (barMax - filled) '░'
+                             in cyan_ (pretty bar)
+                   in dim_ ("  " <> pretty (show idx <> ". "))
+                        <> fill titleW (bold_ (truncated titleW gwl.game.title))
+                        <+> fill 10 (fmtSeconds sec)
+                        <+> barDoc
              in vsep
                   ( [ emptyDoc,
                       dim_ "  Top Played Games"
                     ]
                       <> zipWith (curry row) [1 :: Int ..] s.topPlayed
                   )
-   in vsep
+      metaRows
+        | p >= Lg =
+            let col1W = max 36 ((w `div` 2) - 4)
+                r1 = fill col1W (kv kw "total games" (pretty s.totalGames)) <+> kv kw "total playtime" (fmtSeconds s.totalPlaytime)
+                r2 = fill col1W (kv kw "configured" (pretty s.configuredGames <+> dim_ ("(" <> pretty (showPct s.configuredGames s.totalGames) <> ")"))) <+> kv kw "sessions" (pretty s.totalSessions)
+                r3 = fill col1W (kv kw "played" (green_ (pretty s.playedGames) <+> dim_ ("(" <> pretty (showPct s.playedGames s.totalGames) <> ")"))) <+> kv kw "avg session" (fmtSeconds s.avgSessionSec)
+                r4 = fill col1W (kv kw "unplayed" (dim_ (pretty s.unplayedGames) <+> dim_ ("(" <> pretty (showPct s.unplayedGames s.totalGames) <> ")")))
+             in [ r1,
+                  r2,
+                  r3,
+                  r4
+                ]
+        | otherwise =
+            [ kv kw "total games" (pretty s.totalGames),
+              kv kw "configured" (pretty s.configuredGames <+> dim_ ("(" <> pretty (showPct s.configuredGames s.totalGames) <> ")")),
+              kv kw "played" (green_ (pretty s.playedGames) <+> dim_ ("(" <> pretty (showPct s.playedGames s.totalGames) <> ")")),
+              kv kw "unplayed" (dim_ (pretty s.unplayedGames) <+> dim_ ("(" <> pretty (showPct s.unplayedGames s.totalGames) <> ")")),
+              emptyDoc,
+              kv kw "total playtime" (fmtSeconds s.totalPlaytime),
+              kv kw "sessions" (pretty s.totalSessions),
+              kv kw "avg session" (fmtSeconds s.avgSessionSec)
+            ]
+   in vsep $
         [ ruleW w,
           bold_ (white_ "SenaVN Library Statistics"),
-          ruleW w,
-          kv kw "total games" (pretty s.totalGames),
-          kv kw "configured" (pretty s.configuredGames <+> dim_ ("(" <> pretty (showPct s.configuredGames s.totalGames) <> ")")),
-          kv kw "played" (green_ (pretty s.playedGames) <+> dim_ ("(" <> pretty (showPct s.playedGames s.totalGames) <> ")")),
-          kv kw "unplayed" (dim_ (pretty s.unplayedGames) <+> dim_ ("(" <> pretty (showPct s.unplayedGames s.totalGames) <> ")")),
-          emptyDoc,
-          kv kw "total playtime" (fmtSeconds s.totalPlaytime),
-          kv kw "sessions" (pretty s.totalSessions),
-          kv kw "avg session" (fmtSeconds s.avgSessionSec),
-          topSection,
           ruleW w
         ]
+          <> metaRows
+          <> [ topSection,
+               ruleW w
+             ]
 
 prettyGameStatW :: Int -> GameWithLocal -> Doc AnsiStyle
 prettyGameStatW w gwl =
-  vsep
+  vsep $
     [ ruleW w,
       bold_ (white_ (pretty gwl.game.title)) <+> dim_ (pretty ("#" <> gwl.game.coreId.unGameId)),
-      ruleW w,
-      kv kw "developer" (pretty gwl.game.developer),
-      kv kw "rating" (ratingDoc gwl.game.rating),
-      kv kw "expected" (fmtMinutes gwl.game.expectedPlayTime),
-      kv kw "played" playedDoc,
-      kv kw "progress" (progressBar 16 played gwl.game.expectedPlayTime),
-      emptyDoc,
-      kv kw "sessions" (pretty totalSessCount),
-      kv kw "avg session" (fmtSeconds avgSess),
-      kv kw "longest" (fmtSeconds longestSess),
-      kv kw "first play" (fmtDate firstPlay),
-      kv kw "last play" lastPlayDoc,
       ruleW w
     ]
+      <> metaSections
+      <> [ruleW w]
   where
     kw = 14
     played = effectivePlayed gwl
+    p = getBreakpoint w
+
+    barW = case p of
+      Sm -> 12
+      Md -> 16
+      Lg -> 24
+      Xl -> 32
+
     playedDoc = case gwl.running of
       Just liveSec -> fmtSeconds played <+> green_ (pretty ("(+" <> fmtSecStr liveSec <> " now)"))
       Nothing -> fmtSeconds played
@@ -596,6 +815,34 @@ prettyGameStatW w gwl =
     longestSess = if null timelines then 0 else maximum (map (.duration) timelines)
     avgSess = if totalSessCount > 0 then played `div` totalSessCount else 0
     firstPlay = if null timelines then 0 else minimum (map (.start) timelines)
+
+    metaSections
+      | p >= Lg =
+          let col1W = max 34 ((w `div` 2) - 4)
+              r1 = fill col1W (kv kw "developer" (pretty gwl.game.developer)) <+> kv kw "sessions" (pretty totalSessCount)
+              r2 = fill col1W (kv kw "rating" (ratingDoc gwl.game.rating)) <+> kv kw "avg session" (fmtSeconds avgSess)
+              r3 = fill col1W (kv kw "expected" (fmtMinutes gwl.game.expectedPlayTime)) <+> kv kw "longest" (fmtSeconds longestSess)
+              r4 = fill col1W (kv kw "played" playedDoc) <+> kv kw "first play" (fmtDate firstPlay)
+              r5 = fill col1W (kv kw "progress" (progressBar barW played gwl.game.expectedPlayTime)) <+> kv kw "last play" lastPlayDoc
+           in [ r1,
+                r2,
+                r3,
+                r4,
+                r5
+              ]
+      | otherwise =
+          [ kv kw "developer" (pretty gwl.game.developer),
+            kv kw "rating" (ratingDoc gwl.game.rating),
+            kv kw "expected" (fmtMinutes gwl.game.expectedPlayTime),
+            kv kw "played" playedDoc,
+            kv kw "progress" (progressBar barW played gwl.game.expectedPlayTime),
+            emptyDoc,
+            kv kw "sessions" (pretty totalSessCount),
+            kv kw "avg session" (fmtSeconds avgSess),
+            kv kw "longest" (fmtSeconds longestSess),
+            kv kw "first play" (fmtDate firstPlay),
+            kv kw "last play" lastPlayDoc
+          ]
 
 renderDoc :: Doc AnsiStyle -> IO ()
 renderDoc doc = do

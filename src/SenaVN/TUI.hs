@@ -387,16 +387,17 @@ drawCategoryListOverview s =
                 | null gwl.game.playTimelines -> withAttr attrDim (txt "○ ")
                 | effectivePlayed gwl >= minutesToSeconds gwl.game.expectedPlayTime && gwl.game.expectedPlayTime > 0 -> withAttr attrCyan (txt "✔ ")
                 | otherwise -> withAttr attrGreen (txt "● ")
-            idTxt = withAttr attrBadgeMagenta (txt (" #" <> truncateText 6 gwl.game.coreId.unGameId <> " "))
-            tTxt = withAttr attrTitle (txt (truncateText 28 gwl.game.title))
+            idTxt = withAttr attrBadgeMagenta (txt (" #" <> truncateText 14 gwl.game.coreId.unGameId <> " "))
+            tTxt = withAttr attrTitle (txt (truncateText 50 gwl.game.title))
             playTxt = withAttr attrGreen (txt (T.pack (fmtSecStr (effectivePlayed gwl))))
-            devTxt = withAttr attrDim (txt (truncateText 16 (if T.null gwl.game.developer then "Unknown" else gwl.game.developer)))
+            devTxt = withAttr attrDim (txt (truncateText 26 (if T.null gwl.game.developer then "Unknown" else gwl.game.developer)))
          in hBox
               [ hLimit 3 dot,
-                hLimit 12 idTxt,
-                hLimit 30 tTxt,
-                hLimit 18 devTxt,
-                playTxt
+                hLimit 18 idTxt,
+                tTxt,
+                padLeft Max devTxt,
+                txt "  ",
+                hLimit 12 playTxt
               ]
 
       gameList = vBox (take 18 (map row s.games))
@@ -408,7 +409,6 @@ drawCategoryStatsOverview :: AppState -> Widget ResourceName
 drawCategoryStatsOverview s =
   let st = computeStats s.games
       topGames = take 6 st.topPlayed
-      maxPlay = if null topGames then 1 else maximum (map snd topGames)
 
       hdr = withAttr attrTitle (txt "Library Aggregate Statistics") <=> hBorder
 
@@ -444,19 +444,14 @@ drawCategoryStatsOverview s =
       renderTopRow :: (Int, (GameWithLocal, Seconds)) -> Widget ResourceName
       renderTopRow (idx, (gwl, sec)) =
         let barW = 20 :: Int
-            filled = if maxPlay > 0 then (sec * barW) `div` maxPlay else 0
-            clampedFilled = min barW (max 0 filled)
-            empty = max 0 (barW - clampedFilled)
-            barFilled = T.replicate clampedFilled "█"
-            barEmpty = T.replicate empty "░"
-            titleTxt = truncateText 22 gwl.game.title
+            progWidget = renderProgressBar barW sec gwl.game.expectedPlayTime
+            titleTxt = truncateText 24 gwl.game.title
             durTxt = T.pack (fmtSecStr sec)
          in hBox
               [ hLimit 3 (withAttr attrDim (txt (T.pack (show (idx :: Int) <> ".")))),
-                hLimit 24 (withAttr attrTitle (txt titleTxt)),
-                withAttr attrGreen (txt ("[ " <> barFilled)),
-                withAttr attrDim (txt (barEmpty <> " ] ")),
-                withAttr attrYellow (txt durTxt)
+                hLimit 26 (withAttr attrTitle (txt titleTxt)),
+                hLimit 10 (withAttr attrYellow (txt durTxt)),
+                progWidget
               ]
 
       topHeader = padTop (Pad 1) $ withAttr attrTitle (txt "Top Played Titles (Relative Activity):") <=> hBorder
