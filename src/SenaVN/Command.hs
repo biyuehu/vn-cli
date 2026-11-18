@@ -1,5 +1,6 @@
 module SenaVN.Command
   ( Command (..),
+    PathOption (..),
     MetaOptions (..),
     SortField (..),
     ShellType (..),
@@ -13,10 +14,10 @@ import Control.Exception (SomeException, catch)
 import Data.Char (toLower)
 import Data.Maybe (isJust)
 import Data.Text (Text)
-import qualified Data.Text as T
+import Data.Text qualified as T
 import Database.SQLite.Simple (Only (..), close, open, query_)
 import Options.Applicative
-import qualified SenaVN.DB as DB
+import SenaVN.DB qualified as DB
 import SenaVN.Types (GameId (..))
 import System.Directory (doesFileExist)
 
@@ -69,6 +70,11 @@ shellTypeReader = eitherReader $ \s -> case map toLower s of
   "zsh" -> Right ShellZsh
   "fish" -> Right ShellFish
   other -> Left $ "unsupported shell '" ++ other ++ "', valid: bash|zsh|fish"
+
+data PathOption
+  = PathValue !Text
+  | PathPick
+  deriving (Show, Eq)
 
 data MetaOptions = MetaOptions
   { metaVndbId :: !(Maybe Text),
@@ -152,9 +158,9 @@ data Command
       }
   | Use
       { useCoreId :: !GameId,
-        useExePath :: !Text,
-        useSavePath :: !(Maybe Text),
-        useGuide :: !(Maybe Text)
+        useExePath :: !(Maybe Text),
+        useSavePath :: !(Maybe PathOption),
+        useGuide :: !(Maybe PathOption)
       }
   | Info
       { infoCoreId :: !GameId,
@@ -423,26 +429,19 @@ commandParser =
               <> help "Do not pipe output into a pager"
           )
 
+    pathOption :: String -> String -> Parser (Maybe PathOption)
+    pathOption optName desc =
+      optional
+        ( (PathValue <$> strOption (long optName <> metavar "PATH" <> help (desc <> " path")))
+            <|> flag' PathPick (long optName <> help (desc <> " (omit path to pick interactively)"))
+        )
+
     useParser =
       Use
         <$> argument str (metavar "ID" <> help "Game ID" <> completer gameIdCompleter)
-        <*> argument str (metavar "PATH" <> help "Executable path")
-        <*> optional
-          ( option
-              str
-              ( long "save"
-                  <> metavar "PATH"
-                  <> help "Save directory"
-              )
-          )
-        <*> optional
-          ( option
-              str
-              ( long "guide"
-                  <> metavar "PATH"
-                  <> help "Guide / walkthrough file"
-              )
-          )
+        <*> optional (argument str (metavar "PATH" <> help "Executable path (omit to pick interactively)"))
+        <*> pathOption "save" "Save directory"
+        <*> pathOption "guide" "Guide / walkthrough file"
 
     infoParser' =
       Info

@@ -22,7 +22,7 @@ import qualified Data.Text as T
 import Prettyprinter
 import Prettyprinter.Render.Terminal
 import SenaVN.Api (fetchFromVndb)
-import SenaVN.Command (Command (..), MetaOptions (..), hasMeta)
+import SenaVN.Command (Command (..), MetaOptions (..), PathOption (..), hasMeta)
 import SenaVN.Core (Romi, askConn, throwR)
 import qualified SenaVN.DB as DB
 import SenaVN.Error (SenaError (..))
@@ -31,6 +31,7 @@ import SenaVN.Interactive (askConfirmation, ok, printLn, selectFetchInteractive)
 import SenaVN.Pretty (bold_, cyan_, dim_, printGame, white_)
 import qualified SenaVN.Session as Session
 import SenaVN.System (openEditor, openGameGuide, openGameSave)
+import SenaVN.FilePicker (pickDirPath, pickFilePath)
 import SenaVN.Types
   ( FetchGameData (..),
     GameCore (..),
@@ -151,9 +152,24 @@ handleAdd Add {addName, addCoreId, addPath, addNoFetch, addSkip, addOrder, addKe
               then pure fetched
               else openEditor fetched
 
+  resolvedPath <- case addPath of
+    Just p -> pure (Just p)
+    Nothing ->
+      if addSkip
+        then pure Nothing
+        else liftIO pickFilePath
   liftIO $ DB.insertGame conn finalGame
-  setupLocal addCoreId addPath
-  liftIO $ ok $ bold_ (white_ (pretty finalGame.title)) <+> dim_ "added."
+  setupLocal addCoreId resolvedPath
+  liftIO $ do
+    ok $ bold_ (white_ (pretty finalGame.title)) <+> dim_ "added."
+    case resolvedPath of
+      Just ep ->
+        ok $
+          bold_ (white_ (pretty finalGame.title))
+            <+> annotate (color Magenta) (pretty ("(#" <> addCoreId.unGameId <> ")"))
+            <+> dim_ "linked →"
+            <+> cyan_ (pretty ep)
+      Nothing -> pure ()
 handleAdd _ = pure ()
 
 handleEdit :: Command -> Romi ()
@@ -263,20 +279,69 @@ handleUse :: Command -> Romi ()
 handleUse Use {useCoreId, useExePath, useSavePath, useGuide} = do
   conn <- askConn
   g <- requireGame useCoreId
-  liftIO $ do
-    DB.upsertLocalPath
-      conn
-      LocalPath
-        { localId = useCoreId,
-          programFile = useExePath,
-          savePath = useSavePath,
-          guideFile = useGuide
-        }
-    ok $
-      bold_ (white_ (pretty g.title))
-        <+> annotate (color Magenta) (pretty ("(#" <> useCoreId.unGameId <> ")"))
-        <+> dim_ "linked →"
-        <+> cyan_ (pretty useExePath)
+  oldLocal <- liftIO $ DB.getLocalPath conn useCoreId
+
+  let hasExplicitSub = isJust useSavePath || isJust useGuide
+
+  -- 1. Executable: if passed use it; if omitted, check if only updating save/guide and exe exists, else pick
+  mExe <- case useExePath of
+    Just p -> pure (Just p)
+    Nothing -> case oldLocal of
+      Just ol | hasExplicitSub -> pure (Just ol.programFile)
+      _ -> liftIO pickFilePath
+
+  case mExe of
+    Nothing ->
+      liftIO $ printLn $ annotate (color Yellow) "!" <+> dim_ "Operation cancelled — no executable configured."
+    Just exePath -> do
+      -- 2. Save directory:
+      --    - Just (PathValue p) -> use p
+      --    - Just PathPick -> trigger directory picker
+      --    - Nothing -> keep existing
+      mSave <- case useSavePath of
+        Just (PathValue s) -> pure (Just s)
+        Just PathPick -> do
+          picked <- liftIO pickDirPath
+          pure (picked <|> (oldLocal >>= (.savePath)))
+        Nothing -> pure (oldLocal >>= (.savePath))
+
+      -- 3. Guide file:
+      --    - Just (PathValue g) -> use g
+      --    - Just PathPick -> trigger file picker
+      --    - Nothing -> keep existing
+      mGuide <- case useGuide of
+        Just (PathValue gd) -> pure (Just gd)
+        Just PathPick -> do
+          picked <- liftIO pickFilePath
+          pure (picked <|> (oldLocal >>= (.guideFile)))
+        Nothing -> pure (oldLocal >>= (.guideFile))
+
+      liftIO $ do
+        DB.upsertLocalPath
+          conn
+          LocalPath
+            { localId = useCoreId,
+              programFile = exePath,
+              savePath = mSave,
+              guideFile = mGuide
+            }
+        ok $
+          bold_ (white_ (pretty g.title))
+            <+> annotate (color Magenta) (pretty ("(#" <> useCoreId.unGameId <> ")"))
+            <+> dim_ "linked →"
+            <+> cyan_ (pretty exePath)
+        case mSave of
+          Just sp ->
+            printLn $
+              indent 2 $
+                annotate (color Green) "📁 Save:" <+> cyan_ (pretty sp)
+          Nothing -> pure ()
+        case mGuide of
+          Just gp ->
+            printLn $
+              indent 2 $
+                annotate (color Yellow) "📄 Guide:" <+> cyan_ (pretty gp)
+          Nothing -> pure ()
 handleUse _ = pure ()
 
 handleInfo :: Command -> Romi ()

@@ -79,6 +79,7 @@ cradle:
               - "SenaVN.Core"
               - "SenaVN.DB"
               - "SenaVN.Error"
+              - "SenaVN.FilePicker"
               - "SenaVN.Handler"
               - "SenaVN.Handler.Common"
               - "SenaVN.Handler.Config"
