@@ -50,7 +50,7 @@ jobs:
         uses: haskell-actions/setup@v2
         with:
           ghc-version: '9.8.2'
-          cabal-version: '3.10.3.0'
+          cabal-version: 'latest'
 
       - name: Cache Cabal
         uses: actions/cache@v4
@@ -102,7 +102,7 @@ jobs:
           $env:GHC_CHARENC="UTF-8"
           chcp 65001
           cd docs
-          cabal run site -- rebuild
+          cabal run site -j1 -- rebuild
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
