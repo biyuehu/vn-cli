@@ -6,7 +6,7 @@
 
 **A terminal-first Visual Novel library manager, gameplay tracker, and GitHub cloud synchronizer.**
 
-Crafted for keyboard-driven players and programmers — pure terminal, zero GUI overhead, native Windows process tracking.
+t is designed for programmers and geeks who play visual novel games. They prefer staying in the terminal without running bulky Electron or heavy GUI managers in the background.
 
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue?style=flat-square)](LICENSE)
 [![CI](https://github.com/biyuehu/vn-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/biyuehu/vn-cli/actions/workflows/ci.yml)
@@ -64,13 +64,12 @@ flowchart TD
 
 ## Features
 
-- **Dual Mode Interface**: Run `sena` without arguments to enter the full-screen interactive **TUI browser** (powered by Brick), or use rich CLI subcommands for instant shell scripting and automation.
+- **Hardcore & Cool**: Pure terminal-first, keyboard-driven experience with sleek ANSI aesthetics, blazing-fast responsiveness and based functional programming Haskell!
+- **Zero GUI Overhead**: Run `sena` for a full-featured interactive TUI, use concise CLI subcommands for shell scripting and aliases, and use terminal file picker without manually typing paths.
 - **Seamless VNDB Integration**: Search visual novels directly by name or ID, interactively select search results, and review/edit metadata inside your preferred `$EDITOR` before saving.
-- **Automated Gameplay Tracking**: Non-blocking game launch. `sena-guard` tracks process lifecycles in the background, continuously writing atomic heartbeats.
-- **Crash-Resilient Reconcile**: Unscheduled system reboots or game crashes are automatically reconciled and backfilled on the next CLI run — no lost play sessions.
-- **3-Way Cloud Synchronization**: Synchronize your library with a private GitHub repository. Includes Last-Write-Wins (LWW) conflict resolution, session deduplication, and resurrection of modified games.
-- **Git-Log Style Timelines & Statistics**: Visualize your visual novel journey with flowing session graphs, date grouping, total play duration calculations, and top-played rankings.
-- **Native Windows Terminal Adaptation**: Automatic UTF-8 (`CP65001`) console output switching without needing manual `chcp`, with full support for ANSI styling and color themes.
+- **3-Way Cloud Synchronization**: End-to-end sync with GitHub repositories based GitHub API. And decoupled local paths, only metadata is pure and cloud-synced.
+- **Git-Log Style Timelines**: Visualize play history with ASCII graphs and summary statistics.
+- **Native Windows Adaptation**: Automatic UTF-8 (`CP65001`) console output switching without needing manual `chcp`, with full support for ANSI styling and color themes.
 
 ---
 
@@ -86,52 +85,17 @@ flowchart TD
 
 ---
 
-## CLI Reference
+## Usage
 
-```sh
-sena                                # Launch full-screen interactive TUI browser
-sena add <name> <id> [path]         # Add a game from VNDB with interactive picker & editor
-sena edit <id>                      # Edit game metadata in $EDITOR (or --fetch to refresh)
-sena run <id>                       # Launch game and start background tracking
-sena run --random                   # Pick a random game from library and launch
-sena run --recent | --last          # Launch most recently played game
-sena status                         # Display currently running games and active playtime
-sena list [-s <field>] [-r] [-d]    # List games (sort by played/rating/release/date, detail mode)
-sena stat [id...]                   # Library-wide aggregate statistics or per-game stats
-sena tl [id...] [--today] [--oneline] # Git-log style gameplay session timeline
-sena use <id> <exe> [--save <p>]    # Link local executable path, save directory, and walkthrough
-sena info <id> [-g] [-s]            # View game card or quickly open guide file / save directory
-sena mv <old-id> <new-id>           # Rename game ID (auto-migrates sessions and cloud tombstones)
-sena rm <id> [-H, --hard]           # Remove game (soft local removal or -H permanent cloud deletion)
-sena sync [--dry-run]               # Bidirectional 3-way cloud sync with GitHub repository
-sena config [key] [val] [-u] [-e]   # View, set, unset, or edit configuration in $EDITOR
-sena completion <shell>             # Generate completion script (bash, zsh, fish, powershell)
-```
-
-### Configuration Keys
-
-Configure via `sena config <key> <val>` or `sena config -e`:
-
-| Key | Description | Default |
-| :--- | :--- | :--- |
-| `core.editor` | Preferred editor command (e.g. `code --wait`, `nvim`, `notepad`) | Fallback to `$VISUAL` / `$EDITOR` |
-| `fetch.proxy` | HTTP/HTTPS proxy for VNDB queries and GitHub sync | `""` |
-| `sync.repo` | Target GitHub repository in `owner/repo` format | `""` |
-| `sync.token` | GitHub Personal Access Token with repository scope | `""` (Masked in output) |
-| `sync.branch` | Target branch for synchronization data | `main` |
-| `sync.path` | File path in repository storing synchronized library data | `data.json` |
+Please refer to [SenaVN Document](https://vn.himeno-sena.com/).
 
 ---
 
 ## Build & Development
 
-### Prerequisites
-
 - **GHC 9.8.2** & **Cabal 3.10+** (via [GHCup](https://www.haskell.org/ghcup/))
 - **Rust Stable** (via [rustup](https://rustup.rs/))
 - **Just** task runner (optional, recommended: `cargo install just`)
-
-### Build Commands
 
 ```sh
 # One-step build: compiles both Rust and Haskell, and syncs sena-guard.exe
