@@ -1,0 +1,153 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag (e.g. v2.0.0)'
+        required: true
+        default: 'v2.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Release (Windows x86_64)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build sena-guard
+        run: cargo build --release
+
+      - name: Setup Haskell
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.8.2'
+          cabal-version: '3.10.3.0'
+
+      - name: Cache Cabal
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Roaming\cabal\store
+            dist-newstyle
+          key: ${{ runner.os }}-cabal-release-${{ hashFiles('**/*.cabal', 'cabal.project*') }}
+          restore-keys: |
+            ${{ runner.os }}-cabal-release-
+            ${{ runner.os }}-cabal-
+
+      - name: Cabal Update
+        run: cabal update
+
+      - name: Cabal Build & Test
+        run: |
+          cabal build -O2
+          cabal test --test-show-details=direct -O2
+
+      - name: Stage Release Artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "release_assets"
+
+          $senaExe = Get-ChildItem -Path "dist-newstyle" -Filter "SenaVN.exe" -Recurse |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+
+          if (-not $senaExe) {
+            Write-Error "SenaVN.exe not found in dist-newstyle"
+            exit 1
+          }
+
+          Copy-Item -Path $senaExe.FullName -Destination "release_assets/sena-x86_64-windows.exe"
+          Copy-Item -Path "target/release/sena-guard.exe" -Destination "release_assets/sena-guard-x86_64-windows.exe"
+          Copy-Item -Path "LICENSE" -Destination "release_assets/LICENSE"
+
+          Write-Host "Staged assets:"
+          Get-ChildItem -Path "release_assets"
+
+      - name: Generate Changelog
+        id: changelog
+        shell: pwsh
+        run: |
+          $currentTag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { "${{ github.event.inputs.tag_name }}" }
+          $previousTag = $(git tag --sort=-creatordate | Where-Object { $_ -ne $currentTag } | Select-Object -First 1)
+
+          $range = if ($previousTag) { "$previousTag..HEAD" } else { "HEAD" }
+          Write-Host "Generating changelog for range: $range"
+
+          $rawLogs = git log $range --pretty=format:"%s (%h)"
+
+          $feats = @()
+          $fixes = @()
+          $docs = @()
+          $others = @()
+
+          foreach ($line in $rawLogs) {
+            if ($line -match '^(feat)(\(.*\))?:\s*(.*)') {
+              $feats += "- $($line)"
+            } elseif ($line -match '^(fix)(\(.*\))?:\s*(.*)') {
+              $fixes += "- $($line)"
+            } elseif ($line -match '^(docs)(\(.*\))?:\s*(.*)') {
+              $docs += "- $($line)"
+            } else {
+              $others += "- $($line)"
+            }
+          }
+
+          $body = @()
+          $body += "## Changed in $currentTag"
+          $body += ""
+          if ($feats.Count -gt 0) {
+            $body += "### Features"
+            $body += $feats
+            $body += ""
+          }
+          if ($fixes.Count -gt 0) {
+            $body += "### Bug Fixes"
+            $body += $fixes
+            $body += ""
+          }
+          if ($docs.Count -gt 0) {
+            $body += "### Documentation"
+            $body += $docs
+            $body += ""
+          }
+          if ($others.Count -gt 0) {
+            $body += "### Other Changes"
+            $body += $others
+            $body += ""
+          }
+
+          $bodyText = $body -join "`n"
+          Set-Content -Path "RELEASE_CHANGELOG.md" -Value $bodyText -Encoding utf8
+          Get-Content "RELEASE_CHANGELOG.md"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.tag_name }}
+          name: ${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.tag_name }}
+          body_path: RELEASE_CHANGELOG.md
+          files: |
+            release_assets/sena-x86_64-windows.exe
+            release_assets/sena-guard-x86_64-windows.exe
+            release_assets/LICENSE
+          draft: false
+          prerelease: false
