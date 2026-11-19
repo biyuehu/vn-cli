@@ -4,7 +4,7 @@ title: Sync
 
 # Sync
 
-SenaVN synchronizes your local library, playtime sessions, and metadata with a private GitHub repository using 3-way merge conflict resolution.
+SenaVN synchronizes your local library, playtime sessions, and metadata with a GitHub repository using 3-way merge conflict resolution.
 
 ---
 
@@ -12,9 +12,8 @@ SenaVN synchronizes your local library, playtime sessions, and metadata with a p
 
 To allow SenaVN to read and write your backup repository, generate a Personal Access Token (PAT):
 
-1. **Create a Private Backup Repository**:
+1. **Create a Backup Repository**:
    - Go to [GitHub](https://github.com/) and create a new repository (e.g. `sena-backup`).
-   - Set repository visibility to **Private**.
 
 2. **Generate Token**:
    - Click your profile photo in the top-right corner $\to$ **Settings**.
@@ -23,7 +22,7 @@ To allow SenaVN to read and write your backup repository, generate a Personal Ac
    - Click **Generate new token** $\to$ **Generate new token (classic)**.
    - **Note**: Enter a description (e.g., `SenaVN Sync`).
    - **Expiration**: Select your preferred expiration period (e.g., `No expiration` or `90 days`).
-   - **Select scopes**: Check the **`repo`** scope (Full control of private repositories).
+   - **Select scopes**: Check the **`repo`** scope.
    - Scroll to the bottom and click **Generate token**.
    - Copy the generated token string (`ghp_...`). *(GitHub will not show it again).*
 
