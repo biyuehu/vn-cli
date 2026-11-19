@@ -2,42 +2,39 @@
 title: Home
 ---
 
-# Overview
+# SenaVN | GalKeeper 2.0
 
-Static sites are fast, secure, easy to deploy, and manageable using version
-control.
+A terminal-first Visual Novel library manager, gameplay tracker, and GitHub cloud synchronizer.
 
-Hakyll is a [Haskell](http://haskell.org) library for generating static sites,
-mostly aimed at small-to-medium sites and personal blogs. It is written in a
-very configurable way and uses an [xmonad](http://xmonad.org)-like DSL for
-configuration.
+It is designed for programmers and geeks who play visual novel games, they prefer staying in the terminal without running bulky Electron or heavy GUI managers in the background.
 
-Integration with [pandoc](https://pandoc.org/) gives us markdown
-and TeX support, including syntax highlighting and other goodies.
+Built with **Haskell (GHC 2021)** and a lightweight **Rust daemon (`sena-guard`)**.
 
-# The Hakyll System
+---
 
-## Write your content in whatever format you prefer
+## Why SenaVN?
 
-![Write your content](/images/hakyll-system-1.png)
+- **Hardcore & Cool**: Pure terminal-first, keyboard-driven experience with sleek ANSI aesthetics, blazing-fast responsiveness and based functional programming Haskell!
+- **Zero GUI Overhead**: Run `sena` for a full-featured interactive TUI, use concise CLI subcommands for shell scripting and aliases, and use terminal file picker without manually typing paths.
+- **Seamless VNDB Integration**: Search visual novels directly by name or ID, interactively select search results, and review/edit metadata inside your preferred `$EDITOR` before saving.
+- **3-Way Cloud Synchronization**: End-to-end sync with GitHub repositories based GitHub API. And decoupled local paths, only metadata is pure and cloud-synced.
+- **Git-Log Style Timelines**: Visualize play history with ASCII graphs and summary statistics.
+- **Native Windows Adaptation**: Automatic UTF-8 (`CP65001`) console output switching without needing manual `chcp`, with full support for ANSI styling and color themes.
 
-## Create compilation rules in a Haskell EDSL
+---
 
-![Write your rules](/images/hakyll-system-2.png)
+## Quick Installation
 
-## Compile it to HTML and upload it!
+Install SenaVN with a single command:
 
-![Compile it](/images/hakyll-system-3.png)
+```powershell
+irm https://raw.githubusercontent.com/biyuehu/vn-cli/main/install.ps1 | iex
+```
 
-# Getting Started
+This installs `sena.exe` and `sena-guard.exe` into `~/.senavn/bin` and adds it to your user `PATH`.
 
-You can get the latest version from hackage using `cabal install hakyll`, or
-using [stack] by using `stack install hakyll`. Then, you can:
+---
 
-[stack]: http://www.haskellstack.org/
+## About
 
-- read the [tutorials](/tutorials.html);
-- mail the [google discussion group](http://groups.google.com/group/hakyll);
-- ask questions on the IRC channel: `#hakyll` on
-[irc.libera.chat](https://libera.chat/) (we *do not* have a channel on
-Freenode anymore).
+`Sena` is named after **姬野星奏 (Himeno Sena)**, the heroine from the visual novel [*恋×シンアイ彼女 (Koi x Shin Ai Kanojo)*](https://vndb.org/v17516).
