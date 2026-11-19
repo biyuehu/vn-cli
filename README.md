@@ -2,8 +2,6 @@
 
 <div align="center">
 
-打开Windows窗口选择 或者尝试别的快速方案
-
 # SenaVN | GalKeeper 2.0
 
 **A terminal-first Visual Novel library manager, gameplay tracker, and GitHub cloud synchronizer.**
@@ -66,17 +64,13 @@ flowchart TD
 
 ## Features
 
-- **🎮 Dual Mode Interface**: Run `sena` without arguments to enter the full-screen interactive **TUI browser** (powered by Brick), or use rich CLI subcommands for instant shell scripting and automation.
-- **🔍 Seamless VNDB Integration**: Search visual novels directly by name or ID, interactively select search results, and review/edit metadata inside your preferred `$EDITOR` before saving.
-- **⏱️ Automated Gameplay Tracking**: Non-blocking game launch. `sena-guard` tracks process lifecycles in the background, continuously writing atomic heartbeats.
-- **🛡️ Crash-Resilient Reconcile**: Unscheduled system reboots or game crashes are automatically reconciled and backfilled on the next CLI run — no lost play sessions.
-- **☁️ 3-Way Cloud Synchronization**: Synchronize your library with a private GitHub repository. Includes Last-Write-Wins (LWW) conflict resolution, session deduplication, and resurrection of modified games.
-- **⚰️ Two-Tier Deletion & Tombstone Tracking**:
-  - `sena rm <id>`: Soft removal from local library without deleting remote cloud assets.
-  - `sena rm <id> -H`: Permanent deletion recording an atomic tombstone in `deleted_games`, propagating cloud-wide on sync.
-  - Reusing a previously deleted ID in `sena add` or `sena mv` safely clears historical tombstones with user confirmation.
-- **📈 Git-Log Style Timelines & Statistics**: Visualize your visual novel journey with flowing session graphs, date grouping, total play duration calculations, and top-played rankings.
-- **🪟 Native Windows Terminal Adaptation**: Automatic UTF-8 (`CP65001`) console output switching without needing manual `chcp`, with full support for ANSI styling and color themes.
+- **Dual Mode Interface**: Run `sena` without arguments to enter the full-screen interactive **TUI browser** (powered by Brick), or use rich CLI subcommands for instant shell scripting and automation.
+- **Seamless VNDB Integration**: Search visual novels directly by name or ID, interactively select search results, and review/edit metadata inside your preferred `$EDITOR` before saving.
+- **Automated Gameplay Tracking**: Non-blocking game launch. `sena-guard` tracks process lifecycles in the background, continuously writing atomic heartbeats.
+- **Crash-Resilient Reconcile**: Unscheduled system reboots or game crashes are automatically reconciled and backfilled on the next CLI run — no lost play sessions.
+- **3-Way Cloud Synchronization**: Synchronize your library with a private GitHub repository. Includes Last-Write-Wins (LWW) conflict resolution, session deduplication, and resurrection of modified games.
+- **Git-Log Style Timelines & Statistics**: Visualize your visual novel journey with flowing session graphs, date grouping, total play duration calculations, and top-played rankings.
+- **Native Windows Terminal Adaptation**: Automatic UTF-8 (`CP65001`) console output switching without needing manual `chcp`, with full support for ANSI styling and color themes.
 
 ---
 
