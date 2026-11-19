@@ -38,9 +38,11 @@ jobs:
           if-no-files-found: error
 
   haskell:
-    name: Haskell Check & Build (sena)
+    name: Haskell Check & Build (sena) & Docs
     runs-on: windows-latest
     needs: rust
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -93,3 +95,20 @@ jobs:
           name: sena-vn
           path: staging/*
           if-no-files-found: error
+
+      - name: Build Docs
+        shell: pwsh
+        run: |
+          $env:GHC_CHARENC="UTF-8"
+          chcp 65001
+          cd docs
+          cabal run site -- rebuild
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        if: github.ref == 'refs/heads/main'
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs/_site
+          publish_branch: webpage
+          cname: vn.himeno-sena.com
