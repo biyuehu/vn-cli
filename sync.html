@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <title>SenaVN - Sync</title>
+  <link rel="icon" type="image/png" href="./images/senavn-logo.png" />
+  <link rel="stylesheet" type="text/css" href="./css/default.css" />
+  <link rel="stylesheet" type="text/css" href="./css/syntax.css" />
+  <meta name="keywords" content="senavn,visual novel,galkeeper,vndb,tracker,terminal,haskell,rust,brick" />
+  <meta name="description" content="SenaVN - Terminal Visual Novel library manager, gameplay tracker, and cloud synchronizer." />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+</head>
+
+<body>
+  <div id="main">
+    <div id="header">
+      <a href="./">
+        <img src="./images/senavn-logo.png" alt="lambda" width="40" />
+        SenaVN
+      </a>
+    </div>
+    <div id="sidebar">
+      <h1>Navigation</h1>
+      <a href="./index.html">Overview</a>
+      <a href="./install.html">Installation</a>
+      <a href="./start.html">Start</a>
+      <a href="./sync.html">Sync</a>
+      <a href="./reference.html">Reference</a>
+
+      <h1>Links</h1>
+      <a href="https://github.com/biyuehu/vn-cli" target="_blank">GitHub</a>
+    </div>
+
+    <div id="content">
+      <h1 id="sync">Sync</h1>
+<p>SenaVN synchronizes your local library, playtime sessions, and metadata with a GitHub repository using 3-way merge conflict resolution.</p>
+<hr />
+<h2 id="getting-your-github-personal-access-token">1. Getting Your GitHub Personal Access Token</h2>
+<p>To allow SenaVN to read and write your backup repository, generate a Personal Access Token (PAT):</p>
+<ol type="1">
+<li><strong>Create a Backup Repository</strong>:
+<ul>
+<li>Go to <a href="https://github.com/">GitHub</a> and create a new repository (e.g. <code>sena-backup</code>).</li>
+</ul></li>
+<li><strong>Generate Token</strong>:
+<ul>
+<li>Click your profile photo in the top-right corner <span class="math inline">→</span> <strong>Settings</strong>.</li>
+<li>In the left sidebar, scroll down to the bottom and click <strong>Developer settings</strong>.</li>
+<li>Under <strong>Personal access tokens</strong>, click <strong>Tokens (classic)</strong>.</li>
+<li>Click <strong>Generate new token</strong> <span class="math inline">→</span> <strong>Generate new token (classic)</strong>.</li>
+<li><strong>Note</strong>: Enter a description (e.g., <code>SenaVN Sync</code>).</li>
+<li><strong>Expiration</strong>: Select your preferred expiration period (e.g., <code>No expiration</code> or <code>90 days</code>).</li>
+<li><strong>Select scopes</strong>: Check the <strong><code>repo</code></strong> scope.</li>
+<li>Scroll to the bottom and click <strong>Generate token</strong>.</li>
+<li>Copy the generated token string (<code>ghp_...</code>). <em>(GitHub will not show it again).</em></li>
+</ul></li>
+</ol>
+<hr />
+<h2 id="configuration">2. Configuration</h2>
+<p>Configure repository coordinates and your access token in SenaVN:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Target repository in owner/repo format</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ex">sena</span> config sync.repo <span class="st">&quot;username/sena-backup&quot;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Personal Access Token generated above</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="ex">sena</span> config sync.token <span class="st">&quot;ghp_xxxxxxxxxxxxxxxxxxxx&quot;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Optional: Target branch and data file path (defaults: main / data.json)</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="ex">sena</span> config sync.branch <span class="st">&quot;main&quot;</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="ex">sena</span> config sync.path <span class="st">&quot;data.json&quot;</span></span></code></pre></div>
+<hr />
+<h2 id="running-sync">3. Running Sync</h2>
+<div class="sourceCode" id="cb2"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Perform full bidirectional synchronization</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="ex">sena</span> sync</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Simulate merge and preview planned changes without writing to DB or GitHub</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="ex">sena</span> sync <span class="at">--dry-run</span></span></code></pre></div>
+<hr />
+<h2 id="how-3-way-merge-works">4. How 3-Way Merge Works</h2>
+<pre class="text"><code>Local SQLite (sena.db) &lt;====== 3-Way Merge ======&gt; GitHub Repository (data.json)</code></pre>
+<ol type="1">
+<li><strong>Last-Write-Wins (LWW)</strong>: Game metadata is merged field-by-field. If conflicts occur, the newer <code>updateDate</code> takes precedence.</li>
+<li><strong>Session Deduplication</strong>: Play session timelines (<code>play_sessions</code>) are unioned and deduplicated by session ID and timestamps.</li>
+<li><strong>Tombstone Propagation</strong>: Hard-deleted games (<code>sena rm &lt;id&gt; -H</code>) record an atomic tombstone in <code>deleted_games</code>. Sync propagates tombstones to cloud and deletes matching records on other synced devices.</li>
+<li><strong>Resurrection Safety</strong>: If a game was deleted on one machine but modified or played on another with a newer timestamp, it automatically resurrects and clears historical tombstones.</li>
+</ol>
+    </div>
+
+    <div id="footer">
+      SenaVN | Licensed under GPL-3.0. Generated with <a href="http://github.com/jaspervdj/hakyll">Hakyll</a>.
+    </div>
+  </div>
+
+</body>
+
+</html>

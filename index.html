@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <title>SenaVN - Home</title>
+  <link rel="icon" type="image/png" href="./images/senavn-logo.png" />
+  <link rel="stylesheet" type="text/css" href="./css/default.css" />
+  <link rel="stylesheet" type="text/css" href="./css/syntax.css" />
+  <meta name="keywords" content="senavn,visual novel,galkeeper,vndb,tracker,terminal,haskell,rust,brick" />
+  <meta name="description" content="SenaVN - Terminal Visual Novel library manager, gameplay tracker, and cloud synchronizer." />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+</head>
+
+<body>
+  <div id="main">
+    <div id="header">
+      <a href="./">
+        <img src="./images/senavn-logo.png" alt="lambda" width="40" />
+        SenaVN
+      </a>
+    </div>
+    <div id="sidebar">
+      <h1>Navigation</h1>
+      <a href="./index.html">Overview</a>
+      <a href="./install.html">Installation</a>
+      <a href="./start.html">Start</a>
+      <a href="./sync.html">Sync</a>
+      <a href="./reference.html">Reference</a>
+
+      <h1>Links</h1>
+      <a href="https://github.com/biyuehu/vn-cli" target="_blank">GitHub</a>
+    </div>
+
+    <div id="content">
+      <h1 id="senavn-galkeeper-2.0">SenaVN | GalKeeper 2.0</h1>
+<p>A terminal-first Visual Novel library manager, gameplay tracker, and GitHub cloud synchronizer.</p>
+<p>It is designed for programmers and geeks who play visual novel games, they prefer staying in the terminal without running bulky Electron or heavy GUI managers in the background.</p>
+<p>Built with <strong>Haskell (GHC 2021)</strong> and a lightweight <strong>Rust daemon (<code>sena-guard</code>)</strong>.</p>
+<hr />
+<h2 id="why-senavn">Why SenaVN?</h2>
+<ul>
+<li><strong>Hardcore &amp; Cool</strong>: Pure terminal-first, keyboard-driven experience with sleek ANSI aesthetics, blazing-fast responsiveness and based functional programming Haskell!</li>
+<li><strong>Zero GUI Overhead</strong>: Run <code>sena</code> for a full-featured interactive TUI, use concise CLI subcommands for shell scripting and aliases, and use terminal file picker without manually typing paths.</li>
+<li><strong>Seamless VNDB Integration</strong>: Search visual novels directly by name or ID, interactively select search results, and review/edit metadata inside your preferred <code>$EDITOR</code> before saving.</li>
+<li><strong>3-Way Cloud Synchronization</strong>: End-to-end sync with GitHub repositories based GitHub API. And decoupled local paths, only metadata is pure and cloud-synced.</li>
+<li><strong>Git-Log Style Timelines</strong>: Visualize play history with ASCII graphs and summary statistics.</li>
+<li><strong>Native Windows Adaptation</strong>: Automatic UTF-8 (<code>CP65001</code>) console output switching without needing manual <code>chcp</code>, with full support for ANSI styling and color themes.</li>
+</ul>
+<hr />
+<h2 id="quick-installation">Quick Installation</h2>
+<p>Install SenaVN with a single command:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">irm</span> https<span class="op">://</span>raw<span class="op">.</span><span class="fu">githubusercontent</span><span class="op">.</span><span class="fu">com</span><span class="op">/</span>biyuehu<span class="op">/</span>vn-cli<span class="op">/</span>main<span class="op">/</span>install<span class="op">.</span><span class="fu">ps1</span> <span class="op">|</span> <span class="fu">iex</span></span></code></pre></div>
+<p>This installs <code>sena.exe</code> and <code>sena-guard.exe</code> into <code>~/.senavn/bin</code> and adds it to your user <code>PATH</code>.</p>
+<hr />
+<h2 id="about">About</h2>
+<p><code>Sena</code> is named after <strong>姬野星奏 (Himeno Sena)</strong>, the heroine from the visual novel <a href="https://vndb.org/v17516"><em>恋×シンアイ彼女 (Koi x Shin Ai Kanojo)</em></a>.</p>
+    </div>
+
+    <div id="footer">
+      SenaVN | Licensed under GPL-3.0. Generated with <a href="http://github.com/jaspervdj/hakyll">Hakyll</a>.
+    </div>
+  </div>
+
+</body>
+
+</html>

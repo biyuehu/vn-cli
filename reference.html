@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <title>SenaVN - Reference</title>
+  <link rel="icon" type="image/png" href="./images/senavn-logo.png" />
+  <link rel="stylesheet" type="text/css" href="./css/default.css" />
+  <link rel="stylesheet" type="text/css" href="./css/syntax.css" />
+  <meta name="keywords" content="senavn,visual novel,galkeeper,vndb,tracker,terminal,haskell,rust,brick" />
+  <meta name="description" content="SenaVN - Terminal Visual Novel library manager, gameplay tracker, and cloud synchronizer." />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+</head>
+
+<body>
+  <div id="main">
+    <div id="header">
+      <a href="./">
+        <img src="./images/senavn-logo.png" alt="lambda" width="40" />
+        SenaVN
+      </a>
+    </div>
+    <div id="sidebar">
+      <h1>Navigation</h1>
+      <a href="./index.html">Overview</a>
+      <a href="./install.html">Installation</a>
+      <a href="./start.html">Start</a>
+      <a href="./sync.html">Sync</a>
+      <a href="./reference.html">Reference</a>
+
+      <h1>Links</h1>
+      <a href="https://github.com/biyuehu/vn-cli" target="_blank">GitHub</a>
+    </div>
+
+    <div id="content">
+      <h1 id="complete-cli-configuration-reference">Complete CLI &amp; Configuration Reference</h1>
+<p>This page provides the comprehensive specification for all SenaVN command-line options, subcommands, flags, and persistent configuration keys.</p>
+<hr />
+<h2 id="command-line-interface-cli">Command Line Interface (CLI)</h2>
+<h3 id="syntax-overview">Syntax Overview</h3>
+<div class="sourceCode" id="cb1"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">sena</span> <span class="pp">[</span><span class="ss">SUBCOMMAND</span><span class="pp">]</span> <span class="pp">[</span><span class="ss">OPTIONS</span><span class="pp">]</span></span></code></pre></div>
+<p>Running <code>sena</code> with no arguments launches the interactive Brick TUI browser.</p>
+<hr />
+<h3 id="commands-specification">Commands Specification</h3>
+<h4 id="sena-add"><code>sena add</code></h4>
+<p>Add a new visual novel to the local SQLite database.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">sena</span> add <span class="op">&lt;</span>NAME_OR_QUERY<span class="op">&gt;</span> <span class="op">&lt;</span>ID<span class="op">&gt;</span> <span class="pp">[</span><span class="ss">PATH</span><span class="pp">]</span> <span class="pp">[</span><span class="ss">OPTIONS</span><span class="pp">]</span></span></code></pre></div>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Argument / Flag</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>NAME_OR_QUERY</code></td>
+<td style="text-align: left;">VNDB search query string or game title</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ID</code></td>
+<td style="text-align: left;">Unique alphanumeric identifier for local database</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>PATH</code></td>
+<td style="text-align: left;">Optional executable path. If omitted and <code>--skip</code> is absent, triggers the interactive file picker</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>--vndb-id &lt;ID&gt;</code></td>
+<td style="text-align: left;">Direct VNDB ID (e.g. <code>v2002</code>)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>--developer &lt;DEV&gt;</code></td>
+<td style="text-align: left;">Override developer name</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>--release-date &lt;YYYYMMDD&gt;</code></td>
+<td style="text-align: left;">Override release date integer</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>--rating &lt;SCORE&gt;</code></td>
+<td style="text-align: left;">Override rating score (0.0 - 10.0)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>--description &lt;TEXT&gt;</code></td>
+<td style="text-align: left;">Override description</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>--tag &lt;TAG&gt;</code></td>
+<td style="text-align: left;">Add custom tag (repeatable)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>--no-fetch</code></td>
+<td style="text-align: left;">Skip VNDB query; create local-only record</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>-s, --skip</code></td>
+<td style="text-align: left;">Non-interactive mode: skip confirmation and file picker</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>-o, --order &lt;N&gt;</code></td>
+<td style="text-align: left;">Auto-select Nth search result</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>--keep-name</code></td>
+<td style="text-align: left;">Retain supplied <code>NAME</code> instead of VNDB title</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h4 id="sena-use"><code>sena use</code></h4>
+<p>Associate executable, save folder, and guide file paths with a game.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">sena</span> use <span class="op">&lt;</span>ID<span class="op">&gt;</span> <span class="pp">[</span><span class="ss">PATH</span><span class="pp">]</span> [--save <span class="pp">[</span><span class="ss">PATH</span><span class="pp">]</span>] [--guide <span class="pp">[</span><span class="ss">PATH</span><span class="pp">]</span>]</span></code></pre></div>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Argument / Flag</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>ID</code></td>
+<td style="text-align: left;">Game identifier</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>[PATH]</code></td>
+<td style="text-align: left;">Executable path. Omit to launch interactive file picker</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>--save [PATH]</code></td>
+<td style="text-align: left;">Save folder path. Omit <code>[PATH]</code> to launch interactive directory picker</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>--guide [PATH]</code></td>
+<td style="text-align: left;">Walkthrough file path. Omit <code>[PATH]</code> to launch interactive file picker</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h4 id="sena-run"><code>sena run</code></h4>
+<p>Launch game process and start background tracking daemon.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">sena</span> run <span class="pp">[</span><span class="ss">ID_OR_NAME</span><span class="pp">]</span> <span class="pp">[</span><span class="ss">OPTIONS</span><span class="pp">]</span></span></code></pre></div>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Flag</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>ID_OR_NAME</code></td>
+<td style="text-align: left;">Game ID or title query</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>-s, --skip</code></td>
+<td style="text-align: left;">Exact ID match only, skip title fuzzy matching</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>--random</code></td>
+<td style="text-align: left;">Select and launch a random game</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>-R, --recent</code></td>
+<td style="text-align: left;">Launch the most recently played game</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>-L, --last</code></td>
+<td style="text-align: left;">Launch the most recently added game</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>-f, --filter &lt;EXPR&gt;</code></td>
+<td style="text-align: left;">Filter candidate pool by tag, title, or developer (useful with <code>--random</code>)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h4 id="sena-info"><code>sena info</code></h4>
+<p>Display game card or open associated resources.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">sena</span> info <span class="op">&lt;</span>ID<span class="op">&gt;</span> <span class="pp">[-</span><span class="ss">g</span><span class="pp">]</span> <span class="pp">[-</span><span class="ss">s</span><span class="pp">]</span></span></code></pre></div>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Flag</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>-g, --guide</code></td>
+<td style="text-align: left;">Open linked walkthrough file in <code>$EDITOR</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>-s, --save</code></td>
+<td style="text-align: left;">Open linked save folder in Windows File Explorer</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h4 id="sena-edit"><code>sena edit</code></h4>
+<p>Edit game metadata.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ex">sena</span> edit <span class="op">&lt;</span>ID<span class="op">&gt;</span> <span class="pp">[--</span><span class="ss">fetch</span><span class="pp">]</span> <span class="pp">[--</span><span class="ss">apply</span><span class="pp">]</span> [-o <span class="op">&lt;</span>N<span class="op">&gt;</span>] <span class="pp">[--</span><span class="ss">keep</span><span class="pp">-</span><span class="ss">name</span><span class="pp">]</span></span></code></pre></div>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Flag</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>--fetch</code></td>
+<td style="text-align: left;">Re-fetch metadata from VNDB and open in editor</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>--apply</code></td>
+<td style="text-align: left;">Apply fetched VNDB metadata directly without opening editor</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>-o, --order &lt;N&gt;</code></td>
+<td style="text-align: left;">Auto-select Nth VNDB search result</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>--keep-name</code></td>
+<td style="text-align: left;">Keep existing local title during re-fetch</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h4 id="sena-list"><code>sena list</code></h4>
+<p>List visual novels with formatting and sorting.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="ex">sena</span> list [-s <span class="op">&lt;</span>FIELD<span class="op">&gt;</span>] <span class="pp">[-</span><span class="ss">r</span><span class="pp">]</span> <span class="pp">[-</span><span class="ss">d</span><span class="pp">]</span> [-f <span class="op">&lt;</span>EXPR<span class="op">&gt;</span>]</span></code></pre></div>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Flag</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>-s, --sort &lt;FIELD&gt;</code></td>
+<td style="text-align: left;">Sort by: <code>title</code>, <code>lastPlay</code>, <code>createDate</code>, <code>releaseDate</code>, <code>rating</code>, <code>played</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>-r, --reverse</code></td>
+<td style="text-align: left;">Reverse sort order</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>-d, --detail</code></td>
+<td style="text-align: left;">Show detailed multi-line cards with tags and paths</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>-f, --filter &lt;EXPR&gt;</code></td>
+<td style="text-align: left;">Filter query expression</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h4 id="sena-stat"><code>sena stat</code></h4>
+<p>Display library aggregate statistics or specific game metrics.</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="ex">sena</span> stat <span class="pp">[</span><span class="ss">ID...</span><span class="pp">]</span> [-f <span class="op">&lt;</span>EXPR<span class="op">&gt;</span>]</span></code></pre></div>
+<hr />
+<h4 id="sena-tl"><code>sena tl</code></h4>
+<p>Display git-log style chronological gameplay timelines.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="ex">sena</span> tl <span class="pp">[</span><span class="ss">ID...</span><span class="pp">]</span> <span class="pp">[--</span><span class="ss">today</span><span class="pp">]</span> <span class="pp">[--</span><span class="ss">oneline</span><span class="pp">]</span> [-n <span class="op">&lt;</span>NUM<span class="op">&gt;</span>] <span class="pp">[-</span><span class="ss">r</span><span class="pp">]</span> <span class="pp">[--</span><span class="ss">no</span><span class="pp">-</span><span class="ss">pager</span><span class="pp">]</span></span></code></pre></div>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Flag</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>--today</code></td>
+<td style="text-align: left;">Display sessions recorded today only</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>--oneline</code></td>
+<td style="text-align: left;">Condensed single-line output per session</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>-n, --max-count &lt;N&gt;</code></td>
+<td style="text-align: left;">Limit output to N sessions</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>-r, --reverse</code></td>
+<td style="text-align: left;">Ascending chronological order</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>--no-pager</code></td>
+<td style="text-align: left;">Disable terminal pager output</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h4 id="sena-rm"><code>sena rm</code></h4>
+<p>Remove a game from the library.</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="ex">sena</span> rm <span class="op">&lt;</span>ID<span class="op">&gt;</span> [-H, <span class="at">--hard]</span></span></code></pre></div>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Flag</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">(default)</td>
+<td style="text-align: left;">Soft removal from local database. Retains cloud assets during sync</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>-H, --hard</code></td>
+<td style="text-align: left;">Permanent deletion. Records atomic tombstone for cloud synchronization</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h4 id="sena-mv"><code>sena mv</code></h4>
+<p>Rename game identifier.</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="ex">sena</span> mv <span class="op">&lt;</span>OLD_ID<span class="op">&gt;</span> <span class="op">&lt;</span>NEW_ID<span class="op">&gt;</span></span></code></pre></div>
+<p>Migrates sessions, local paths, and clears/records appropriate tombstones.</p>
+<hr />
+<h4 id="sena-sync"><code>sena sync</code></h4>
+<p>Synchronize local library with GitHub repository.</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="ex">sena</span> sync <span class="pp">[--</span><span class="ss">dry</span><span class="pp">-</span><span class="ss">run</span><span class="pp">]</span></span></code></pre></div>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Flag</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>-n, --dry-run</code></td>
+<td style="text-align: left;">Simulate 3-way merge and report changes without modifying local DB or remote repo</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h4 id="sena-config"><code>sena config</code></h4>
+<p>Manage persistent key-value configuration.</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="ex">sena</span> config <span class="pp">[</span><span class="ss">KEY</span><span class="pp">]</span> <span class="pp">[</span><span class="ss">VALUE</span><span class="pp">]</span> [-u <span class="op">&lt;</span>KEY<span class="op">&gt;</span>] <span class="pp">[-</span><span class="ss">e</span><span class="pp">]</span></span></code></pre></div>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Option</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>(no args)</code></td>
+<td style="text-align: left;">Print all active configuration values</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>&lt;KEY&gt;</code></td>
+<td style="text-align: left;">Query specific configuration value</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>&lt;KEY&gt; &lt;VALUE&gt;</code></td>
+<td style="text-align: left;">Set configuration value</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>-u, --unset &lt;KEY&gt;</code></td>
+<td style="text-align: left;">Delete configuration key</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>-e, --edit</code></td>
+<td style="text-align: left;">Open all configurations inside <code>$EDITOR</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="configuration-reference">Configuration Reference</h2>
+<p>SenaVN configuration is stored in SQLite table <code>configs</code>.</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Configuration Key</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Default</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>core.editor</code></td>
+<td style="text-align: left;">String</td>
+<td style="text-align: left;">Fallback <code>$EDITOR</code></td>
+<td style="text-align: left;">Preferred editor command (e.g. <code>code --wait</code>, <code>nvim</code>, <code>notepad</code>).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>fetch.proxy</code></td>
+<td style="text-align: left;">String</td>
+<td style="text-align: left;"><code>""</code></td>
+<td style="text-align: left;">HTTP/HTTPS proxy URL for VNDB queries and cloud sync (e.g. <code>http://127.0.0.1:7890</code>).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>sync.repo</code></td>
+<td style="text-align: left;">String</td>
+<td style="text-align: left;"><code>""</code></td>
+<td style="text-align: left;">Target GitHub repository in <code>owner/repo</code> format.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>sync.token</code></td>
+<td style="text-align: left;">String</td>
+<td style="text-align: left;"><code>""</code></td>
+<td style="text-align: left;">GitHub Personal Access Token (masked in CLI outputs).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>sync.branch</code></td>
+<td style="text-align: left;">String</td>
+<td style="text-align: left;"><code>main</code></td>
+<td style="text-align: left;">Git branch storing library synchronization JSON.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>sync.path</code></td>
+<td style="text-align: left;">String</td>
+<td style="text-align: left;"><code>data.json</code></td>
+<td style="text-align: left;">Path within repository storing library data.</td>
+</tr>
+</tbody>
+</table>
+    </div>
+
+    <div id="footer">
+      SenaVN | Licensed under GPL-3.0. Generated with <a href="http://github.com/jaspervdj/hakyll">Hakyll</a>.
+    </div>
+  </div>
+
+</body>
+
+</html>

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <title>SenaVN - Installation</title>
+  <link rel="icon" type="image/png" href="./images/senavn-logo.png" />
+  <link rel="stylesheet" type="text/css" href="./css/default.css" />
+  <link rel="stylesheet" type="text/css" href="./css/syntax.css" />
+  <meta name="keywords" content="senavn,visual novel,galkeeper,vndb,tracker,terminal,haskell,rust,brick" />
+  <meta name="description" content="SenaVN - Terminal Visual Novel library manager, gameplay tracker, and cloud synchronizer." />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+</head>
+
+<body>
+  <div id="main">
+    <div id="header">
+      <a href="./">
+        <img src="./images/senavn-logo.png" alt="lambda" width="40" />
+        SenaVN
+      </a>
+    </div>
+    <div id="sidebar">
+      <h1>Navigation</h1>
+      <a href="./index.html">Overview</a>
+      <a href="./install.html">Installation</a>
+      <a href="./start.html">Start</a>
+      <a href="./sync.html">Sync</a>
+      <a href="./reference.html">Reference</a>
+
+      <h1>Links</h1>
+      <a href="https://github.com/biyuehu/vn-cli" target="_blank">GitHub</a>
+    </div>
+
+    <div id="content">
+      <h1 id="installation-guide">Installation Guide</h1>
+<h2 id="quick-install-windows-one-liner">Quick Install (Windows One-Liner)</h2>
+<p>Install SenaVN directly via PowerShell without administrative privileges:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">irm</span> https<span class="op">://</span>raw<span class="op">.</span><span class="fu">githubusercontent</span><span class="op">.</span><span class="fu">com</span><span class="op">/</span>biyuehu<span class="op">/</span>vn-cli<span class="op">/</span>main<span class="op">/</span>install<span class="op">.</span><span class="fu">ps1</span> <span class="op">|</span> <span class="fu">iex</span></span></code></pre></div>
+<h3 id="what-this-does">What this does</h3>
+<ol type="1">
+<li>Queries GitHub Releases API for the latest release.</li>
+<li>Downloads <code>sena-x86_64-windows.exe</code> and saves it as <code>~/.senavn/bin/sena.exe</code> (and <code>SenaVN.exe</code>).</li>
+<li>Downloads <code>sena-guard-x86_64-windows.exe</code> and saves it as <code>~/.senavn/bin/sena-guard.exe</code>.</li>
+<li>Appends <code>~/.senavn/bin</code> to the user’s persistent <code>PATH</code> environment variable.</li>
+<li>Refreshes current session <code>$env:PATH</code>.</li>
+</ol>
+<hr />
+<h2 id="manual-installation">Manual Installation</h2>
+<ol type="1">
+<li>Navigate to <a href="https://github.com/biyuehu/vn-cli/releases">GitHub Releases</a>.</li>
+<li>Download:
+<ul>
+<li><code>sena-x86_64-windows.exe</code> (rename to <code>sena.exe</code>)</li>
+<li><code>sena-guard-x86_64-windows.exe</code> (rename to <code>sena-guard.exe</code>)</li>
+<li><code>LICENSE</code></li>
+</ul></li>
+<li>Place both executables in the <strong>same directory</strong> (e.g. <code>C:\Tools\SenaVN</code> or <code>%USERPROFILE%\.senavn\bin</code>).</li>
+<li>Add that directory to your system or user <code>PATH</code>.</li>
+</ol>
+<hr />
+<h2 id="building-from-source">Building from Source</h2>
+<h3 id="prerequisites">Prerequisites</h3>
+<ul>
+<li><strong>GHC 9.8.2</strong> &amp; <strong>Cabal 3.10+</strong> (via <a href="https://www.haskell.org/ghcup/">GHCup</a>)</li>
+<li><strong>Rust Stable</strong> (via <a href="https://rustup.rs/">rustup</a>)</li>
+<li><strong>Just</strong> task runner (optional: <code>cargo install just</code>)</li>
+</ul>
+<h3 id="build-commands">Build Commands</h3>
+<div class="sourceCode" id="cb2"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/biyuehu/vn-cli.git</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> vn-cli</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Compiles Rust daemon and Haskell CLI, then syncs sena-guard.exe to dist directory</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="ex">just</span> build</span></code></pre></div>
+<p>Run test suite:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">cabal</span> test</span></code></pre></div>
+    </div>
+
+    <div id="footer">
+      SenaVN | Licensed under GPL-3.0. Generated with <a href="http://github.com/jaspervdj/hakyll">Hakyll</a>.
+    </div>
+  </div>
+
+</body>
+
+</html>
