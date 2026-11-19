@@ -28,3 +28,30 @@ build:
     cp -f target/release/sena-guard "$sena_dir/"
     echo "[just] Synced sena-guard to $sena_dir"
   fi
+
+docs: docs-build
+
+[windows]
+docs-build:
+  $env:GHC_CHARENC="UTF-8"; chcp 65001; cd docs; cabal run site -- build
+
+[windows]
+docs-watch:
+  $env:GHC_CHARENC="UTF-8"; chcp 65001; cd docs; cabal run site -- watch
+
+[windows]
+docs-clean:
+  cd docs; cabal run site -- clean
+
+[unix]
+docs-build:
+  cd docs && cabal run site -- build
+
+[unix]
+docs-watch:
+  cd docs && cabal run site -- watch
+
+[unix]
+docs-clean:
+  cd docs && cabal run site -- clean
+
