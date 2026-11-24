@@ -8,13 +8,14 @@ param(
 $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-$C_RESET   = "`e[0m"
-$C_BOLD    = "`e[1m"
-$C_CYAN    = "`e[36m"
-$C_GREEN   = "`e[32m"
-$C_YELLOW  = "`e[33m"
-$C_RED     = "`e[31m"
-$C_MAGENTA = "`e[35m"
+$E = [char]27
+$C_RESET   = "$($E)[0m"
+$C_BOLD    = "$($E)[1m"
+$C_CYAN    = "$($E)[36m"
+$C_GREEN   = "$($E)[32m"
+$C_YELLOW  = "$($E)[33m"
+$C_RED     = "$($E)[31m"
+$C_MAGENTA = "$($E)[35m"
 
 function Write-Step {
     param([string]$Text)
