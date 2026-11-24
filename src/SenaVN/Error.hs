@@ -208,7 +208,7 @@ renderSenaErrorDoc err = case err of
     cyanId (GameId gid) = annotate (color Magenta <> bold) (pretty ("(#" <> gid <> ")"))
     cyanKey k = annotate (color Cyan <> bold) (pretty ("'" <> k <> "'"))
     cyan_ = annotate (color Cyan)
-    dim_ = annotate (colorDull Black)
+    dim_ = annotate (colorDull White)
     whiteBold = annotate (color White <> bold)
 
 renderSenaError :: SenaError -> Text

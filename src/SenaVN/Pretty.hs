@@ -83,7 +83,7 @@ white_ :: Doc AnsiStyle -> Doc AnsiStyle
 white_ = annotate (color White)
 
 dim_ :: Doc AnsiStyle -> Doc AnsiStyle
-dim_ = annotate (colorDull Black)
+dim_ = annotate (colorDull White)
 
 fmtDate :: Int -> Doc AnsiStyle
 fmtDate 0 = dim_ "—"
